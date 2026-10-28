@@ -36,6 +36,14 @@
   #hangar button.sel { border-color: #ffd27a; color: #ffd27a; }
   #hangar button.loading { opacity: .5; }
   #start .card { max-width: 680px; }
+  .opts { margin: 4px 0 2px; font-size: 13px; }
+  .opts button { margin: 0 3px; padding: 3px 12px; border-radius: 6px; border: 1px solid #556; background: #0c1118; color: #cfd6de; cursor: pointer; font: inherit; }
+  .opts button.sel { border-color: #ffd27a; color: #ffd27a; }
+  #kills small { font-size: 12px; font-weight: 400; opacity: .85; }
+  #dmg { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(255,30,20,.55)); opacity: 0; transition: opacity .25s; }
+  .mslmk { position: absolute; left: 0; top: 0; color: #ff4d3d; font-size: 11px; }
+  .mslmk::before { content: ''; position: absolute; width: 0; height: 0; margin: -8px 0 0 -6px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 14px solid #ff4d3d; transform: rotate(var(--r, 0deg)); }
+  .mslmk span { position: absolute; left: 10px; top: -16px; white-space: nowrap; }
   #credit { position: fixed; right: 12px; bottom: 8px; color: rgba(255,255,255,.55); font-size: 10px; z-index: 5; pointer-events: none; }
   .tgt { position: absolute; left: 0; top: 0; color: #ff9a82; font-size: 11px; font-weight: 400; }
   .tgt::before { content: ''; position: absolute; width: 22px; height: 22px; margin: -12px 0 0 -12px; border: 1.5px solid rgba(255,110,90,.9); border-radius: 3px; }
@@ -69,15 +77,17 @@
   <div id="lt" class="tape"><small>速度 km/h</small><span id="spd">0</span><small id="mach" class="mach">M 0.00</small></div>
   <div id="rt" class="tape"><small>高度 m</small><span id="alt">0</span></div>
   <div id="bt">油门 <span id="thr">0</span>% · <span id="gl">1.0</span> G · 航向 <span id="hdg">000</span>° · 导弹 <span id="msl">2</span>/2</div>
-  <div id="lead"></div><div id="kills">击落 <span id="kn">0</span></div><div id="msg"></div>
+  <div id="lead"></div><div id="kills">击落 <span id="kn">0</span><br><small>机体 <span id="hpv">100</span>% · 热诱弹 <span id="flv">30</span></small></div><div id="msg"></div>
+  <div id="dmg"></div>
   <div id="warn"></div>
 </div>
 <div id="start">
   <div class="card">
     <h1>太平洋空战</h1>
     <div id="hangar"></div>
+    <div class="opts">难度 <span id="diff"><button data-v="rookie">新兵</button><button data-v="vet" class="sel">老手</button><button data-v="ace">王牌</button></span></div>
     <p class="go">选好机型，点击空白处开始</p>
-    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头距离 · R 重新起飞 · Esc 暂停</p>
+    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头距离 · R 重新起飞 · Esc 暂停</p>
   </div>
 </div>
 <div id="credit">机模：bohmerang（10 款）、outpiston（F-117）· Sketchfab · CC BY-NC-SA 4.0</div>
@@ -855,6 +865,7 @@ class Aircraft {
     this.seed = Math.random() * 100;
     this.mesh = null;
     this.prevVel = V3(); this.accEst = V3();
+    this.aimErr = V3(); this.modeDir = V3(); this.mode = 'patrol'; this.thinkT = 0; this.lockT = 0; this.nextMsl = 0; this.flareCD = 0; this.flares = 30;
   }
   reset(pos, fwd, speed, type) {
     if (this.mesh) { scene.remove(this.mesh); disposeTree(this.mesh); }
@@ -873,7 +884,8 @@ class Aircraft {
     this.alive = true; this.onFire = false; this.engineDead = false; this.pilotDead = false; this.exploded = false; this.doomed = false;
     this.trailAcc = 0; this.gunT = 0; this.tracerN = 0; this.firing = false;
     this.evadeUntil = 0; this.lastHit = -99; this.lastAttacker = null;
-    if (this.isPlayer) mountMissiles(this);
+    mountMissiles(this);
+    this.flares = 30; this.lockT = 0;
   }
 }
 
@@ -964,22 +976,77 @@ function autopilot(ac) {
   if (keys.KeyQ) ctrl.yaw = -1; if (keys.KeyE) ctrl.yaw = 1;
 }
 
-// ---------- 敌机（本阶段：巡航 + 中弹急转规避；缠斗 AI 下一阶段做） ----------
-function enemyBrain(ac) {
-  const st = ac.st;
+// ---------- 难度 ----------
+// aimErr 瞄准误差 rad，react 决策间隔 s，gLim 过载上限比例，gunCone 开炮锥角，gunRange 开炮距离，mslCD 导弹间隔 s，evade 被咬尾时摆脱概率，flare 躲导弹放诱饵的积极度，count 同时在场敌机数
+const DIFF = {
+  rookie: { aimErr: 0.07, react: 0.9, gLim: 0.65, gunCone: 0.05, gunRange: 900, mslCD: 70, evade: 0.25, flare: 0.3, count: 3 },
+  vet:    { aimErr: 0.035, react: 0.45, gLim: 0.85, gunCone: 0.035, gunRange: 1100, mslCD: 40, evade: 0.6, flare: 0.6, count: 4 },
+  ace:    { aimErr: 0.012, react: 0.2, gLim: 1.0, gunCone: 0.025, gunRange: 1300, mslCD: 22, evade: 0.9, flare: 0.9, count: 5 },
+};
+let difficulty = 'vet';
+
+// ---------- 敌机 AI：巡航 → 发现玩家进攻 → 被咬尾急转摆脱 → 导弹来袭侧飞放诱饵 ----------
+function enemyBrain(ac, dt) {
+  const st = ac.st, D = DIFF[difficulty];
+  ac.firing = false;
   if (ac.pilotDead) { ac.ctrl.pitch = -0.1; ac.ctrl.roll = 0.15; ac.ctrl.yaw = 0; return; }
-  if (gameTime < ac.evadeUntil) ac.aimDir.copy(ac.evadeDir);
-  else {
+  const P = player.alive && !player.doomed ? player : null;
+  const toP = P ? _e1.subVectors(P.st.pos, st.pos) : null, dist = P ? toP.length() : 1e9;
+  const nose = _e2.set(0, -GUN_DOWN, 1).normalize().applyQuaternion(st.q);
+  const threat = missiles.find((m) => m.target === ac && m.pos.distanceTo(st.pos) < 3500);
+  if (threat && Math.random() < D.flare * dt * 2.5) dropFlares(ac);
+  if ((ac.thinkT -= dt) <= 0) {
+    ac.thinkT = D.react * rand(0.7, 1.3);
+    ac.aimErr.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(D.aimErr);
+    if (threat) {
+      // 侧飞（垂直于导弹来向）并略微俯冲，让导弹转不过来
+      const los = _e3.subVectors(threat.pos, st.pos).normalize();
+      ac.modeDir.crossVectors(los, UP).normalize().multiplyScalar(ac.dirSign).addScaledVector(UP, -0.25).normalize();
+      ac.mode = 'missile';
+    } else if (P && dist < 9000) {
+      const pNose = _e3.set(0, 0, 1).applyQuaternion(P.st.q), fromP = _e4.copy(toP).negate().normalize();
+      const chased = dist < 1600 && pNose.dot(fromP) > Math.cos(0.35) && nose.dot(fromP) > 0.2;
+      if (chased && ac.mode !== 'break' && Math.random() < D.evade) {
+        ac.mode = 'break'; ac.modeUntil = gameTime + rand(2, 4);
+        ac.modeDir.crossVectors(fromP, UP).normalize().multiplyScalar(Math.random() < 0.5 ? 1 : -1).addScaledVector(UP, rand(-0.5, 0.3)).normalize();
+      } else if (ac.mode !== 'break' || gameTime > ac.modeUntil) ac.mode = 'attack';
+    } else ac.mode = 'patrol';
+  }
+  if (ac.mode === 'missile' && !threat) ac.mode = 'attack';
+  if (ac.mode === 'attack' && !P) ac.mode = 'patrol';
+  if (ac.mode === 'patrol') {
     const c = ac.home, ang = Math.atan2(st.pos.z - c.z, st.pos.x - c.x) + ac.dirSign * 0.4;
     ac.aimDir.set(c.x + Math.cos(ang) * ac.R, c.y + 120 * Math.sin(gameTime * 0.12 + ac.seed), c.z + Math.sin(ang) * ac.R).sub(st.pos).normalize();
+    ac.aimDir.y = THREE.MathUtils.clamp(ac.aimDir.y, -0.3, 0.35); ac.aimDir.normalize();
+    st.thr = 0.8;
+  } else if (ac.mode === 'attack') {
+    // 近了瞄提前量（带难度相关的误差），远了直接追向玩家前方
+    if (dist < 2500) ac.aimDir.subVectors(leadPoint(st.pos, st.vel, P, _e3), st.pos).normalize().add(ac.aimErr).normalize();
+    else ac.aimDir.copy(P.st.pos).addScaledVector(P.st.vel, 1.5).sub(st.pos).normalize();
+    if (st.V < 190) ac.aimDir.y = Math.min(ac.aimDir.y, 0.05);   // 速度掉了别再爬，先攒能量
+    ac.aimDir.y = THREE.MathUtils.clamp(ac.aimDir.y, -0.7, 0.7); ac.aimDir.normalize();
+    st.thr = dist > 2000 || st.V < 220 ? 1 : 0.85;
+    // 机炮：炮线对准提前量点
+    if (dist < D.gunRange) {
+      const ld = _e3.subVectors(leadPoint(st.pos, st.vel, P, _e4), st.pos).normalize();
+      ac.firing = nose.dot(ld) > Math.cos(D.gunCone);
+    }
+    // 导弹：玩家在机头前方 1.5~6 km，持续对准 1.5 s 才发射
+    const inCone = dist > 1500 && dist < 6000 && nose.dot(_e3.copy(toP).normalize()) > Math.cos(0.35);
+    ac.lockT = inCone ? ac.lockT + dt : Math.max(0, ac.lockT - dt * 2);
+    if (ac.lockT > 1.5 && gameTime > ac.nextMsl) { launchMissile(ac, P); ac.nextMsl = gameTime + D.mslCD * rand(0.8, 1.2); ac.lockT = 0; }
+  } else {
+    ac.aimDir.copy(ac.modeDir);
+    st.thr = 1;
   }
-  ac.aimDir.y = THREE.MathUtils.clamp(ac.aimDir.y, -0.3, 0.35); ac.aimDir.normalize();
+  if (ac.mode !== 'attack') ac.lockT = Math.max(0, ac.lockT - dt * 2);
   // 预判 4 秒后的离地高度，提前拉起
   const px = st.pos.x + st.vel.x * 4, pz = st.pos.z + st.vel.z * 4;
   const agl = Math.min(st.pos.y - groundH(st.pos.x, st.pos.z), st.pos.y + st.vel.y * 4 - groundH(px, pz));
   if (agl < 400) { ac.aimDir.y = Math.max(ac.aimDir.y, 0.45); ac.aimDir.normalize(); }
   autopilot(ac);
 }
+const _e1 = V3(), _e2 = V3(), _e3 = V3(), _e4 = V3();
 let player = null;
 const spawnQueue = [];
 function spawnEnemy() {
@@ -994,6 +1061,8 @@ function spawnEnemy() {
   const rel = _b.subVectors(pos, ac.home);
   const fwd = V3().set(-rel.z, 0, rel.x).multiplyScalar(ac.dirSign).normalize();
   ac.reset(pos, fwd, 240, type); ac.st.thr = 0.8;
+  ac.fm.maxG = ac.jet.g * DIFF[difficulty].gLim;
+  ac.mode = 'patrol'; ac.thinkT = rand(0, 1); ac.nextMsl = gameTime + DIFF[difficulty].mslCD * rand(0.4, 0.8);
   aircraft.push(ac);
 }
 
@@ -1024,6 +1093,7 @@ function debrisChunk(ac, name) {
 function credit(ac) {
   if (ac.doomed) return;
   ac.doomed = true;
+  if (ac === player) showWarn('被击落 · 按 R 重新起飞', true);
   if (ac !== player && ac.lastAttacker === player) { kills++; showMsg('击落！'); }
 }
 function checkDamage(ac) {
@@ -1047,6 +1117,7 @@ function applyHit(ac, part, wp, attacker) {
   ac.lastHit = gameTime; ac.lastAttacker = attacker;
   fxSparks(wp, ac.st.vel);
   if (attacker === player) { hitMark(); ac.playerHitT = gameTime; }
+  if (ac === player) playerHurt(0.35);
   if ((part === 'engine' && Math.random() < 0.06) || ((part === 'wingL' || part === 'wingR') && Math.random() < 0.025)) ac.onFire = true;
   if (!ac.isPlayer && !ac.pilotDead && gameTime > ac.evadeUntil - 1.5) {
     const f = _a.set(0, 0, 1).applyQuaternion(ac.st.q);
@@ -1265,10 +1336,11 @@ function updateLock(dt) {
   }
   if (best !== lock.target) { lock.target = best; lock.t = 0; }
   if (best) lock.t = Math.min(1, lock.t + dt / 0.8);
-  for (const s of player.slots || []) if (!s.ready && (s.reload -= dt) <= 0) s.ready = true;
+  for (const ac of aircraft) for (const s of ac.slots || []) if (!s.ready && (s.reload -= dt) <= 0) s.ready = true;
 }
-function launchMissile(ac) {
+function launchMissile(ac, tgt) {
   if (!ac.alive || !ac.slots) return;
+  if (ac === player) tgt = lock.t >= 1 ? lock.target : null;
   for (let k = 0; k < ac.slots.length; k++) {
     const s = ac.slots[(ac.nextSlot + k) % ac.slots.length];
     if (!s.ready) continue;
@@ -1279,8 +1351,8 @@ function launchMissile(ac) {
     m.position.copy(p); scene.add(m);
     const fwd = V3().set(0, 0, 1).applyQuaternion(ac.st.q);
     missiles.push({ mesh: m, pos: p, vel: ac.st.vel.clone().addScaledVector(fwd, 15).addScaledVector(UP, -4), owner: ac,
-                    target: lock.t >= 1 ? lock.target : null, age: 0, trail: 0 });
-    sfxLaunch();
+                    target: tgt, age: 0, trail: 0 });
+    if (ac === player || ac.st.pos.distanceTo(player.st.pos) < 3000) sfxLaunch();
     return;
   }
 }
@@ -1294,7 +1366,10 @@ function updateMissiles(dt) {
     let ns = burning ? Math.min(sp + 380 * dt, 1300) : Math.max(sp - 30 * dt, 0);
     let dir = _md.copy(m.vel).divideScalar(sp);
     const T = m.target;
-    if (T && T.alive && m.age > 0.25) {
+    // 导引头视场 ±60°，目标甩到后面就丢失；追诱饵追到跟前直接自爆
+    if (T && T.alive && _mr.subVectors(T.st.pos, m.pos).normalize().dot(dir) < 0.5 && m.age > 1) m.target = null;
+    if (T && T.isFlare && T.st.pos.distanceTo(m.pos) < 15) { fxExplosion(m.pos, ZERO, 0.3); scene.remove(m.mesh); missiles.splice(i, 1); continue; }
+    if (m.target && T.alive && m.age > 0.25) {
       // 追前置点；转弯率受 30G 限制
       const r = _mr.subVectors(T.st.pos, m.pos), dist = r.length();
       const closing = Math.max(80, -_b.subVectors(T.st.vel, m.vel).dot(r) / dist);
@@ -1339,9 +1414,36 @@ function blast(p, attacker) {
     ac.lastHit = gameTime; ac.lastAttacker = attacker;
     if (Math.random() < 0.5) ac.onFire = true;
     if (attacker === player) hitMark();
+    if (ac === player) playerHurt(1);
     checkDamage(ac);
   }
 }
+// ---------- 热诱弹：抛出一组 4 发高温光点，追着这架飞机的导弹有一定概率被骗走 ----------
+const flares = [];
+function dropFlares(ac) {
+  if (gameTime < ac.flareCD || ac.flares <= 0) return;
+  ac.flareCD = gameTime + 1.0; ac.flares--;
+  const back = _f1.set(0, 0, -1).applyQuaternion(ac.st.q);
+  const group = [];
+  for (let k = 0; k < 4; k++) {
+    const f = { st: { pos: ac.st.pos.clone().addScaledVector(back, ac.jet.len * 0.5), vel: ac.st.vel.clone().multiplyScalar(0.55).add(rr(30)).addScaledVector(UP, -15) },
+                alive: true, isFlare: true, life: 3.5 };
+    flares.push(f); group.push(f);
+  }
+  for (const m of missiles) if (m.target === ac && m.pos.distanceTo(ac.st.pos) < 5000 && Math.random() < (ac === player ? 0.7 : 0.4)) m.target = group[Math.floor(Math.random() * 4)];
+  if (ac === player) sfxFlare();
+}
+const _f1 = V3();
+function updateFlares(dt) {
+  for (let i = flares.length - 1; i >= 0; i--) {
+    const f = flares[i];
+    f.st.vel.y -= 4 * dt; f.st.vel.multiplyScalar(1 - 0.9 * dt); f.st.pos.addScaledVector(f.st.vel, dt);
+    glowFx.emit(f.st.pos, ZERO, 0.1, 3.2, 1.4, 9, 8, 6, 1, 0, 0, 0.6);
+    smokeFx.emit(f.st.pos, ZERO, rand(2, 3), 0.6, 3.5, 1.6, 1.6, 1.6, 0.4, -0.01, 0, 1);
+    if ((f.life -= dt) <= 0) { f.alive = false; flares.splice(i, 1); }
+  }
+}
+function sfxFlare() { playBuf(audio?.tick, 0.6, 1800, 'bandpass', 0.5); }
 function sfxLaunch() { playBuf(audio?.boom, 0.5, 1400, 'bandpass', 1.8); }
 
 // ---------- 声音（WebAudio 合成，无素材） ----------
@@ -1367,7 +1469,7 @@ function initAudio() {
   const lockOsc = ac.createOscillator(), lockG = ac.createGain(); lockOsc.type = 'square'; lockOsc.frequency.value = 1150; lockG.gain.value = 0;
   lockOsc.connect(lockG); lockG.connect(sfx);
   [o1, o2, pulse, noise, lockOsc].forEach((n) => n.start());
-  audio = { ac, o1, o2, pulse, lp, wg, master, sfx, lockG, gun: noiseBuf(ac, 0.09, 45), boom: noiseBuf(ac, 2.2, 2.2), tick: noiseBuf(ac, 0.03, 160) };
+  audio = { ac, o1, o2, pulse, lp, wg, master, sfx, lockG, lockOsc, gun: noiseBuf(ac, 0.09, 45), boom: noiseBuf(ac, 2.2, 2.2), tick: noiseBuf(ac, 0.03, 160) };
 }
 function playBuf(buf, gain, freq, type = 'lowpass', rate = 1) {
   if (!audio || audio.ac.state !== 'running') return;
@@ -1376,6 +1478,7 @@ function playBuf(buf, gain, freq, type = 'lowpass', rate = 1) {
   s.connect(f); f.connect(g); g.connect(audio.sfx); s.start();
 }
 function sfxGun() { playBuf(audio?.gun, 0.55, 2200, 'lowpass', rand(0.9, 1.1)); }
+function sfxHurt(k) { playBuf(audio?.tick, 0.5 + 0.5 * k, 900, 'lowpass', 0.6); }
 function sfxHit() { playBuf(audio?.tick, 0.5, 3200, 'bandpass', 1); }
 function sfxBoom(p, k) {
   if (!player) return;
@@ -1392,7 +1495,9 @@ function updateAudio() {
   audio.lp.frequency.setTargetAtTime(300 + rpm * 1500 + (st.thr > 0.85 ? 900 : 0), t, 0.2);
   audio.wg.gain.setTargetAtTime(dead ? 0 : Math.min(0.6, (st.V / 320) ** 2 * 0.2 + (st.thr > 0.85 ? 0.12 : 0) + Math.max(0, st.g - 4) * 0.04), t, 0.2);
   audio.master.gain.setTargetAtTime(dead ? 0 : 0.4, t, 0.3);
-  const lg = !lock.target || dead ? 0 : lock.t >= 1 ? 0.035 : (gameTime * 7) % 1 < 0.45 ? 0.03 : 0;   // 锁定中嘀嘀，锁定后长音
+  const threatened = missiles.some((m) => m.target === player);
+  const lg = dead ? 0 : threatened ? ((gameTime * 9) % 1 < 0.5 ? 0.05 : 0) : !lock.target ? 0 : lock.t >= 1 ? 0.035 : (gameTime * 7) % 1 < 0.45 ? 0.03 : 0;   // 锁定中嘀嘀，锁定后长音，导弹来袭急促报警
+  audio.lockOsc.frequency.setTargetAtTime(threatened ? 1700 : 1150, t, 0.01);
   audio.lockG.gain.setTargetAtTime(lg, t, 0.01);
 }
 
@@ -1406,6 +1511,7 @@ function updateCamera(dt) {
   const target = _b.copy(look).multiplyScalar(-cam.dist).addScaledVector(UP, cam.dist * 0.2);
   cam.offset.lerp(target, 1 - Math.exp(-dt * 10));
   camera.position.copy(player.st.pos).add(cam.offset);
+  if (shake > 0) { camera.position.add(rr(shake)); shake = Math.max(0, shake - dt * 1.5); }
   camera.lookAt(_c.copy(player.st.pos).addScaledVector(look, 120).addScaledVector(UP, cam.dist * 0.15));
   const fov = 50 + 16 * smoothstep(150, 650, player.st.V);   // 越快视野越广，增强速度感
   if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
@@ -1415,11 +1521,14 @@ function updateCamera(dt) {
 const $ = (id) => document.getElementById(id);
 const hud = { aim: $('aim'), nose: $('nose'), spd: $('spd'), alt: $('alt'), thr: $('thr'), gl: $('gl'), hdg: $('hdg'),
               warn: $('warn'), msl: $('msl'), lead: $('lead'), kn: $('kn'), msg: $('msg') };
+const mslEls = Array.from({ length: 4 }, () => { const e = document.createElement('div'); e.className = 'mslmk'; e.innerHTML = '<span></span>'; $('hud').appendChild(e); return e; });
 const tgtEls = Array.from({ length: 8 }, () => { const e = document.createElement('div'); e.className = 'tgt'; e.innerHTML = '<span></span>'; $('hud').appendChild(e); return e; });
 let warnSticky = false, msgT = 0, hitT = 0;
 function showWarn(t, sticky = false) { hud.warn.textContent = t; hud.warn.style.opacity = t ? 1 : 0; warnSticky = sticky; }
 function showMsg(t) { hud.msg.textContent = t; hud.msg.style.opacity = 1; msgT = 1.8; }
 function hitMark() { hitT = 0.12; sfxHit(); }
+let hurtT = 0, shake = 0;
+function playerHurt(k) { hurtT = Math.max(hurtT, 0.25 + 0.35 * k); shake = Math.max(shake, 0.4 * k + 0.15); sfxHurt(k); }
 function screenPos(v) {
   const p = _d.copy(v).project(camera);
   return { x: (p.x * 0.5 + 0.5) * innerWidth, y: (-p.y * 0.5 + 0.5) * innerHeight, behind: p.z > 1, nx: p.x, ny: p.y };
@@ -1443,6 +1552,25 @@ function updateHUD(dt) {
   hud.gl.style.color = st.g > 8 ? '#ff6a5a' : st.g > 6 ? '#ffd27a' : '';   // 高 G 只变色提示，不弹警告
   hud.msl.textContent = player.slots ? player.slots.filter((s) => s.ready).length : 0;
   hud.kn.textContent = kills;
+  const hpSum = Object.keys(HP0).reduce((a, k) => a + Math.max(0, player.hp[k]) / HP0[k], 0) / Object.keys(HP0).length;
+  $('hpv').textContent = Math.round(hpSum * 100); $('hpv').style.color = hpSum < 0.4 ? '#ff6a5a' : hpSum < 0.7 ? '#ffd27a' : '';
+  $('flv').textContent = player.flares;
+  $('dmg').style.opacity = (hurtT -= dt) > 0 ? Math.min(1, hurtT * 2.5) : 0;
+  // 来袭导弹：屏幕上标出方位
+  let mk = 0;
+  for (const m of missiles) {
+    if (m.target !== player || mk >= mslEls.length) continue;
+    const el = mslEls[mk++], sp = screenPos(m.pos), d = m.pos.distanceTo(st.pos);
+    let x = sp.x, y = sp.y;
+    const off = sp.behind || x < 0 || y < 0 || x > innerWidth || y > innerHeight;
+    if (off) { const dx = sp.behind ? -sp.nx : sp.nx, dy = sp.behind ? sp.ny : -sp.ny, mm = Math.max(Math.abs(dx), Math.abs(dy)) || 1;
+      x = innerWidth / 2 + dx / mm * (innerWidth / 2 - 40); y = innerHeight / 2 + dy / mm * (innerHeight / 2 - 40); }
+    el.style.opacity = 1; el.style.transform = `translate(${x}px, ${y}px)`;
+    el.style.setProperty('--r', Math.atan2(x - innerWidth / 2, -(y - innerHeight / 2)) * 57.3 + 'deg');
+    el.firstChild.textContent = (d / 1000).toFixed(1) + ' km';
+  }
+  for (; mk < mslEls.length; mk++) mslEls[mk].style.opacity = 0;
+
   if ((msgT -= dt) <= 0) hud.msg.style.opacity = 0;
   const f = _a.set(0, 0, 1).applyQuaternion(st.q);
   hud.hdg.textContent = String(Math.round((THREE.MathUtils.radToDeg(Math.atan2(f.x, f.z)) + 360) % 360)).padStart(3, '0');
@@ -1481,7 +1609,10 @@ function updateHUD(dt) {
 
   if (warnSticky) return;
   const agl = st.pos.y - groundH(st.pos.x, st.pos.z);
-  if (st.stalled) showWarn('失速');
+  const incoming = missiles.some((m) => m.target === player), locked = aircraft.some((a) => a !== player && a.alive && a.lockT > 0.4);
+  if (incoming) showWarn('导弹来袭！按 X 放热诱弹');
+  else if (locked) showWarn('被锁定');
+  else if (st.stalled) showWarn('失速');
   else if (agl < 120 && st.vel.y < -15) showWarn('拉起！');
   else showWarn('');
 }
@@ -1491,7 +1622,7 @@ const startEl = $('start');
 const params = new URLSearchParams(location.search);
 let running = params.has('autostart'), mouseDown = false;
 if (running) startEl.style.display = 'none';
-startEl.addEventListener('click', (e) => { if (e.target.closest('#hangar') || !booted) return; renderer.domElement.requestPointerLock(); initAudio(); });
+startEl.addEventListener('click', (e) => { if (e.target.closest('#hangar') || e.target.closest('.opts') || !booted) return; renderer.domElement.requestPointerLock(); initAudio(); });
 document.addEventListener('pointerlockchange', () => {
   running = document.pointerLockElement === renderer.domElement;
   startEl.style.display = running ? 'none' : 'flex';
@@ -1518,6 +1649,7 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'KeyR') respawnPlayer(false);
   if (e.code === 'KeyF' && running && !e.repeat) launchMissile(player);
+  if (e.code === 'KeyX' && running && player.alive) dropFlares(player);
   if (e.code === 'KeyC' && !cam.free) { cam.free = true; freeYaw = aimYaw; freePitch = aimPitch; }
   if (e.code === 'KeyV') cam.dist = cam.dist > 40 ? 20 : cam.dist > 25 ? 55 : 32;
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -1552,6 +1684,11 @@ for (const id of JET_IDS) {
   });
   hangarEl.appendChild(b);
 }
+for (const b of $('diff').children) b.addEventListener('click', () => {
+  difficulty = b.dataset.v;
+  for (const x of $('diff').children) x.classList.toggle('sel', x === b);
+  for (const ac of aircraft) if (ac !== player) ac.fm.maxG = ac.jet.g * DIFF[difficulty].gLim;
+});
 function markHangar() { for (const b of hangarEl.children) b.classList.toggle('sel', b.dataset.id === playerType); }
 markHangar();
 async function boot() {
@@ -1559,7 +1696,7 @@ async function boot() {
   const others = JET_IDS.filter((id) => id !== playerType).sort(() => Math.random() - 0.5);
   await Promise.all([playerType, ...others.slice(0, 3)].map(loadJet));
   respawnPlayer(true);
-  for (let i = 0; i < 4; i++) spawnEnemy();
+  for (let i = 0; i < DIFF[difficulty].count; i++) spawnEnemy();
   booted = true;
   const l = $('loading'); l.style.opacity = 0; setTimeout(() => l.remove(), 1000);
   /*SELFTEST*/
@@ -1575,7 +1712,7 @@ function stepWorld(dt) {
     player.firing = mouseDown || keys.Space;
     autopilot(player);
   }
-  for (const ac of aircraft) if (ac !== player && ac.alive) enemyBrain(ac);
+  for (const ac of aircraft) if (ac !== player && ac.alive) enemyBrain(ac, dt);
   for (const ac of aircraft) ac.prevVel.copy(ac.st.vel);
   const n = Math.ceil(dt / (1 / 120));
   for (let i = 0; i < n; i++) for (const ac of aircraft) if (ac.alive) physicsStep(ac, dt / n);
@@ -1597,12 +1734,14 @@ function stepWorld(dt) {
   updateDebris(dt);
   updateLock(dt);
   updateMissiles(dt);
+  updateFlares(dt);
   for (let i = aircraft.length - 1; i >= 0; i--) {
     const ac = aircraft[i];
     if (ac === player || ac.alive) continue;
     scene.remove(ac.mesh); disposeTree(ac.mesh); aircraft.splice(i, 1);
     spawnQueue.push(gameTime + 6);
   }
+  if (aircraft.length - 1 + spawnQueue.length < DIFF[difficulty].count) spawnQueue.push(gameTime + 3);
   while (spawnQueue.length && spawnQueue[0] <= gameTime) { spawnQueue.shift(); spawnEnemy(); }
   flash.intensity *= Math.exp(-dt * 9);
 }
