@@ -28,6 +28,7 @@
     missiles.length = 0; flares.length = 0; for (const b of bullets) b.life = 0;
     for (const d of debris) scene.remove(d.obj); debris.length = 0;
     smokeFx.clear(); glowFx.clear();   // 上个镜头的烟和火光不能留到下个镜头
+    shakeAmp = 0;
     M.bomber = null;
   }
   function mk(type, isPlayer = false) {
@@ -51,7 +52,16 @@
     ac.st.pos.copy(p1); ac.st.vel.copy(v); ac.st.V = v.length(); ac.st.g = lift.length() / 9.81; ac.st.thr = thr;
     ac.accEst.copy(a);
   }
-  function look(from, at) { camera.position.copy(from); camera.lookAt(at); }
+  // 运动模糊要把一帧拆成几个子步，事件只能在包含该时刻的那个子步触发一次
+  let evOK = true, stepDT = DT, shakeAmp = 0;
+  const at = (t, X) => evOK && t <= X && X < t + stepDT;
+  // 镜头：可选的轻微手持抖动（几组不成倍数的正弦叠加，平滑不跳）
+  function look(from, at) {
+    camera.position.copy(from); camera.lookAt(at);
+    if (shakeAmp) { const v = videoT; camera.rotateX(shakeAmp * (Math.sin(v * 7.1) + 0.6 * Math.sin(v * 13.7 + 1) + 0.3 * Math.sin(v * 29.3 + 2)));
+      camera.rotateY(shakeAmp * (Math.sin(v * 5.3 + 4) + 0.6 * Math.sin(v * 11.9 + 3) + 0.3 * Math.sin(v * 31.1)));
+      camera.rotateZ(shakeAmp * 0.6 * (Math.sin(v * 3.7 + 2) + 0.5 * Math.sin(v * 9.2))); }
+  }
   // 机位按世界坐标摆（不跟着机身倾斜）：back 后方距离，up 上方，side 右侧（+右 -左）
   function chase(ac, back, up, side) {
     const f = ac.st.vel.clone().setY(0).normalize(), r = V3().crossVectors(f, UP).normalize();
@@ -105,28 +115,28 @@
     fly(A, path, t, 1);
     const cam = V3().set(1478, 6, 0);
     look(cam, lerpV(A.st.pos, A.st.pos.clone().addScaledVector(A.st.vel, 0.25), 0.5));
-    if (Math.abs(t - 2.05) < DT / 2) ev('flyby', 1.2, A.st.pos);
+    if (at(t, 2.05)) ev('flyby', 1.2, A.st.pos);
   });
   // 3 侧面跟拍：F-22 在群岛上空缓转
-  shot(5, () => { clearAll(); applyWeather('dusk'); A = mk('F-22', true); fov(38); }, (t) => {
+  shot(5, () => { clearAll(); applyWeather('dusk'); A = mk('F-22', true); fov(38); shakeAmp = 0.0025; }, (t) => {
     const R = 5200, w = 230 / R, c = V3().set(ISL.x - R + 900, 0, ISL.z - 600);
     const path = (u) => V3().set(c.x + R * Math.cos(w * u + 0.2), 1150 + 25 * Math.sin(u * 0.25), c.z + R * Math.sin(w * u + 0.2));
-    fly(A, path, t, 0.8);
+    fly(A, path, t, 1);
     const k = ease(t / 5);
     look(chase(A, THREE.MathUtils.lerp(30, -12, k), 7 + 4 * k, -42), A.st.pos.clone().addScaledVector(A.st.vel, 0.02));
   });
   // 4 敌机 Su-57 大坡度转弯掠过镜头，翼尖拉出水汽
-  shot(4, () => { clearAll(); B = mk('Su-57'); fov(36); }, (t) => {
+  shot(4, () => { clearAll(); B = mk('Su-57'); fov(36); shakeAmp = 0.003; }, (t) => {
     const c = V3().set(-3000, 1400, 2500), R = 650;
     const path = (u) => V3().set(c.x + R * Math.cos(-1.2 + u * 0.42), c.y - 30 * u, c.z + R * Math.sin(-1.2 + u * 0.42));
     fly(B, path, t, 1);
     const cam = path(2.2).add(V3().set(0, 0, 0)).addScaledVector(path(2.2).sub(c).normalize(), 70).add(V3().set(0, 18, 0));
     look(cam, B.st.pos);
-    if (Math.abs(t - 1.9) < DT / 2) ev('flyby', 1.0, B.st.pos, 1.05);
+    if (at(t, 1.9)) ev('flyby', 1.0, B.st.pos, 1.05);
   });
   // 5 咬尾机炮：曳光弹命中、起火、空中解体
   shot(7, () => {
-    clearAll(); A = mk('F-22', true); B = mk('Su-57'); fov(44);
+    clearAll(); A = mk('F-22', true); B = mk('Su-57'); fov(44); shakeAmp = 0.004;
     beds.push({ k: 'fight' });
   }, (t) => {
     const R = 3200, w = 245 / R, c = V3().set(-6000, 1800, -2000);
@@ -210,7 +220,7 @@
     fly(A, path, Math.max(t, 0.06), t > 1 ? 1 : 0.6);
     if (t < 1.05) { A.st.q.setFromUnitVectors(V3().set(0, 0, 1), fwd); }
     setGear(A, t < 4.2);
-    if (Math.abs(t - 1.0) < DT / 2) ev('missile', 0.6, A.st.pos, 0.5);
+    if (at(t, 1.0)) ev('missile', 0.6, A.st.pos, 0.5);
     look(carrierWorld(-16, 98, DECK_Y() + 3, V3()), A.st.pos.clone().addScaledVector(fwd, 6));
   });
   // 9 暴风雨：贴着海面仰拍，F-22 冲向地平线上那座巨大的积雨云，闪电劈下
@@ -222,7 +232,7 @@
     fly(A, path, t, 0.95);
     A.st.q.multiply(new THREE.Quaternion().setFromAxisAngle(V3().set(0, 0, 1), 0.03 * Math.sin(t * 7)));   // 乱流颠簸
     nextBolt = 99;
-    for (const [bt, fwd, lat] of BOLTS) if (Math.abs(t - bt) < DT / 2) {
+    for (const [bt, fwd, lat] of BOLTS) if (at(t, bt)) {
       const cp = camera.position; triggerLightning(V3().set(cp.x + dir.x * lat + side.x * (fwd - 9000) * 0.3, 0, cp.z + dir.z * lat + side.z * (fwd - 9000) * 0.3));
       ev('thunder', fwd < 5000 ? 1.4 : 0.9, null); ev('boom_low', fwd < 5000 ? 1.2 : 0.6, null, 0.6);
     }
@@ -242,7 +252,7 @@
     const pathB = (u) => base.clone().addScaledVector(ND, 30).addScaledVector(side, -365 + 150 * u).add(V3().set(0, 58 + 6 * u, 0));
     fly(A, pathA, t, 1); fly(B, pathB, t, 1);
     look(NC, NC.clone().addScaledVector(ND, 500).addScaledVector(side, 40 * (t - 2.2)).add(V3().set(0, 190, 0)));
-    if (Math.abs(t - 1.6) < DT / 2) ev('flyby', 1.0, A.st.pos, 0.9);
+    if (at(t, 1.6)) ev('flyby', 1.0, A.st.pos, 0.9);
   });
   // 11 蓝天里拉起远去（片尾）
   shot(5, () => {
@@ -256,7 +266,7 @@
     fly(A, path, t, 1);
     const cam = p0.clone().add(V3().set(10, -8, 0));
     look(cam, cam.clone().addScaledVector(sun, 600).add(V3().set(0, 75, 0)));   // 镜头固定望向夕阳，飞机从头顶掠过入画
-    if (Math.abs(t - 0.5) < DT / 2) ev('flyby', 1.2, A.st.pos, 0.95);
+    if (at(t, 0.5)) ev('flyby', 1.2, A.st.pos, 0.95);
   });
 
   // ---- 录制接口 ----
@@ -268,15 +278,26 @@
     videoT = frame / FPS;
     let i = starts.length - 1; while (i > 0 && starts[i] > videoT) i--;
     if (i !== cur) { cur = i; shotT = 0; slow = 1; S[i].setup(); S[i].update(0, DT); updateIslands(camera.position, true); }
-    S[i].update(shotT, DT);
-    const sdt = DT * (cur === 6 ? slow : 1);
-    world(sdt);
-    S[i].update(shotT, 0);   // 物理推进后再摆一次镜头，避免相机落后一帧
-    render(DT);
+    // 运动模糊：一帧拆成 SUB 个子步分别渲染再平均（相当于 360° 快门），高速掠过时海面和云会拖出真实的模糊
+    const SUB = window.__SUB || 3;
+    accCv ??= Object.assign(document.createElement('canvas'), { width: renderer.domElement.width, height: renderer.domElement.height });
+    const ctx = accCv.getContext('2d');
+    for (let s = 0; s < SUB; s++) {
+      const sdt = DT * (cur === 6 ? slow : 1) / SUB;
+      stepDT = sdt; evOK = true;
+      S[i].update(shotT, DT / SUB);
+      evOK = false;
+      world(sdt);
+      S[i].update(shotT, 0);   // 物理推进后再摆一次镜头，避免相机落后
+      render(DT / SUB);
+      ctx.globalAlpha = 1 / (s + 1); ctx.drawImage(renderer.domElement, 0, 0);
+      shotT += sdt;
+    }
     if (player.firing) EV.push({ t: videoT, k: 'cannonframe' });
-    shotT += sdt; frame++;
-    return renderer.domElement.toDataURL('image/jpeg', 0.93);
+    frame++;
+    return accCv.toDataURL('image/jpeg', 0.93);
   };
+  let accCv = null;
   // ---- 离线混音：真实录音 + 合成低音铺底 + 转场鼓点 ----
   window.renderAudio = async () => {
     const len = window.PROMO_LEN, SR = 44100, ctx = new OfflineAudioContext(2, SR * len, SR);
