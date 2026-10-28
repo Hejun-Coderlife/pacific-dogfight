@@ -235,7 +235,7 @@ const water = new Water(new THREE.PlaneGeometry(60000, 60000), {
   sunDirection: new THREE.Vector3(), sunColor: 0xffffff, waterColor: 0x0b4a6e,
   distortionScale: 8, fog: true,
 });
-water.material.uniforms.size.value = 0.45;
+water.material.uniforms.size.value = 1.1;   // 近处要有细碎风浪，太小会像一面镜子
 // 原 Water 着色器的菲涅尔基础反射率 0.3 太像镜子；真实海水约 0.02，正视时透出水体颜色，掠射时才强反射
 water.material.fragmentShader = water.material.fragmentShader
   .replace('float rf0 = 0.3;', 'float rf0 = 0.035;')
@@ -939,6 +939,12 @@ function eyePos(id) {
   else j.eye = V3().set(0, 0.07 * j.len, 0.28 * j.len);
   return j.eye;
 }
+// 座舱视角时把本机座舱盖玻璃藏起来（F-22 等镀金座舱盖从里面看会把整个视野染成金色）
+function setCanopyHidden(ac, hide) {
+  if (!ac.mesh || ac._canopyHidden === hide) return;
+  ac._canopyHidden = hide;
+  ac.mesh.traverse((n) => { if (n.isMesh && /glass|canopy/i.test(n.material?.name || '') && !/inst|hud/i.test(n.material?.name || '')) n.visible = !hide; });
+}
 function jetMesh(id) {
   const g = new THREE.Group(), m = jetGLTF[id].scene.clone(true);
   m.rotation.y = Math.PI;   // 导出的模型机头朝 -Z，转过来对齐机体系 +Z
@@ -1041,6 +1047,7 @@ class Aircraft {
     st.vel.copy(fwd).multiplyScalar(speed); st.V = speed; st.w.set(0, 0, 0); st.thr = 0.8; st.g = 1;
     this.aimDir.copy(fwd);
     this.hp = { ...HP0 }; this.lost = { wingL: false, wingR: false, tail: false };
+    this._canopyHidden = false;   // 新机身的座舱盖默认可见
     this.alive = true; this.onFire = false; this.engineDead = false; this.pilotDead = false; this.exploded = false; this.doomed = false;
     this.trailAcc = 0; this.gunT = 0; this.tracerN = 0; this.firing = false;
     this.evadeUntil = 0; this.lastHit = -99; this.lastAttacker = null;
@@ -1359,7 +1366,7 @@ function aircraftFx(ac, dt) {
     // 沿这一帧飞过的路径补烟，高速时也连成一条烟带
     ac.trailAcc -= spacing;
     const dark = lvl > 1.5, ep = ac.mesh.localToWorld(_pp.set(0, 0, -0.45 * L)).addScaledVector(st.vel, -dt * (ac.trailAcc / Math.max(travel, 1e-3)));
-    if (dark) smokeFx.emit(ep, _vv.copy(st.vel).multiplyScalar(0.25), rand(6, 10), 2.2, rand(13, 19), 0.02, 0.02, 0.02, 1.0, -0.03, 1.4, 1);
+    if (dark) smokeFx.emit(ep, _vv.copy(st.vel).multiplyScalar(0.25), rand(5, 8), 2.6, rand(10, 14), 0.07, 0.065, 0.06, 0.62, -0.03, 1.4, 1);   // 炭灰、半透明，不是一堵黑墙
     else smokeFx.emit(ep, _vv.copy(st.vel).multiplyScalar(0.25), rand(4, 7), 1.2, rand(7, 10), 0.4, 0.4, 0.42, 0.45, -0.03, 1.4, 1);
   }
   if (!lvl) ac.trailAcc = 0;
@@ -1752,6 +1759,7 @@ function dirFromAngles(yaw, pitch, out) { return out.set(Math.sin(yaw) * Math.co
 const _cq = new THREE.Quaternion(), _flip = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
 function updateCamera(dt) {
   if (killcam.t > 0) return updateKillcam(dt);
+  setCanopyHidden(player, cam.cockpit && player.alive);
   if (cam.cockpit && player.alive) {
     // 座舱：眼位跟着机身，镜头朝机头（three 的相机看 -Z，所以绕 Y 转 180°）；按住 C 可以转头看
     camera.position.copy(player.mesh.localToWorld(_a.copy(eyePos(player.type))));
@@ -2419,13 +2427,13 @@ const bolt2 = new THREE.Mesh(boltGeo2, new THREE.ShaderMaterial({
   uniforms: { uI: { value: 0 } },
   vertexShader: `attribute vec3 iA; attribute vec3 iB; attribute float iW; varying vec2 vUv;
     void main() { vec4 a = viewMatrix * vec4(iA, 1.0), b = viewMatrix * vec4(iB, 1.0); vec4 p = mix(a, b, position.y + 0.5);
-      vec2 d = normalize((b.xy / max(-b.z, 0.1)) - (a.xy / max(-a.z, 0.1)) + 1e-5); float w = max(iW, -p.z * 0.004);
+      vec2 d = normalize((b.xy / max(-b.z, 0.1)) - (a.xy / max(-a.z, 0.1)) + 1e-5); float w = max(iW * 4.0, -p.z * 0.014);   // 条带比电弧宽很多，留出外圈辉光
       p.xy += vec2(-d.y, d.x) * position.x * w; vUv = uv; gl_Position = projectionMatrix * p; }`,
-  fragmentShader: `uniform float uI; varying vec2 vUv; void main() { float x = abs(vUv.x * 2.0 - 1.0); float core = exp(-x * x * 30.0), glow = exp(-x * x * 3.0);
+  fragmentShader: `uniform float uI; varying vec2 vUv; void main() { float x = abs(vUv.x * 2.0 - 1.0); float core = exp(-x * x * 260.0), glow = exp(-x * x * 9.0) * 0.55 + exp(-x * x * 2.0) * 0.12;
       float a = (core * 1.0 + glow * 0.35) * uI; gl_FragColor = vec4(vec3(9.0, 9.5, 14.0) * a, a); }`,
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
 bolt2.frustumCulled = false; bolt2.renderOrder = 7; scene.add(bolt2);
-let boltPulse = [], boltClock = 0, boltPt = new THREE.Vector3();
+let boltPulse = [], boltClock = 0, boltPt = new THREE.Vector3(), boltNear = 0.3;
 // 生成一道从云底劈到海面的雷电：主干 + 几条分叉
 function makeBolt(top, bottomY) {
   let n = 0;
@@ -2435,11 +2443,11 @@ function makeBolt(top, bottomY) {
     for (let k = 0; k < steps && p.y > bottomY; k++) {
       const q = p.clone().add(V3().set(dir.x * 60 + rand(-40, 40), -60 * (0.6 + Math.random() * 0.8), dir.z * 60 + rand(-40, 40)));
       seg(p, q, w); p = q;
-      if (depth < 2 && Math.random() < 0.09) walk(p.clone(), len * rand(0.15, 0.4), w * 0.5, V3().set(rand(-1.5, 1.5), 0, rand(-1.5, 1.5)), depth + 1);
+      if (depth < 2 && Math.random() < 0.09) walk(p.clone(), len * rand(0.15, 0.4), w * 0.5, V3().set(rand(-0.8, 0.8), 0, rand(-0.8, 0.8)), depth + 1);
     }
     return p;
   };
-  walk(top, top.y - bottomY + 200, 7, V3(), 0);
+  walk(top, top.y - bottomY + 200, 16, V3(), 0);
   boltGeo2.instanceCount = n;
   for (const k of ['iA', 'iB', 'iW']) boltGeo2.attributes[k].needsUpdate = true;
 }
@@ -2449,10 +2457,11 @@ function triggerLightning(at) {
   const p = at ? at.clone() : (Math.random() < 0.6
     ? V3().set(cp.x + 11000 + rand(-3500, 3500), 0, cp.z + 14000 + rand(-3500, 3500))
     : V3().set(cp.x + rand(-9000, 9000), 0, cp.z + rand(4000, 12000)));
-  makeBolt(V3().set(p.x, 1300, p.z), 0);
+  makeBolt(V3().set(p.x, 2200, p.z), 0);
   boltPt.copy(p).setY(1200); boltClock = 0;
   boltPulse = [[0, 1], [0.06, 0.25], [0.11, 0.9], [0.2, 0.15], [0.27, 0.7], [0.45, 0]];   // 主闪 + 回击连闪
   const d = Math.hypot(p.x - cp.x, p.z - cp.z);
+  boltNear = 0.25 + 0.4 * Math.exp(-d / 4000);   // 越近闪得越狠
   if (audio) { playReal('thunder', Math.min(1.4, 3 / (1 + d / 3000)), Math.max(500, 7000 - d * 0.4), d / 340); playReal('boom_low', Math.min(1.2, 2.5 / (1 + d / 2000)), 300, d / 340, 0.6); }
   window.__onLightning && window.__onLightning(d);
 }
@@ -2521,7 +2530,7 @@ function updateWeather(dt) {
     boltClock += dt;
     while (boltPulse.length > 1 && boltClock >= boltPulse[1][0]) boltPulse.shift();
     const I = boltPulse[0][1] * (boltPulse.length > 1 ? 1 : 0);
-    bolt2.material.uniforms.uI.value = I; flashK = Math.max(flashK, I * 0.3);
+    bolt2.material.uniforms.uI.value = I; flashK = Math.max(flashK, I * boltNear);
     if (stormCell.visible) colorStormCell(I, stormCell.position.x + boltPt.x - camera.position.x, boltPt.y, stormCell.position.z + boltPt.z - camera.position.z);
     if (boltPulse.length === 1) { boltPulse = []; bolt2.material.uniforms.uI.value = 0; if (stormCell.visible) colorStormCell(0); }
   }

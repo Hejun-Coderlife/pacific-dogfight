@@ -143,15 +143,14 @@
   });
   // 5b 座舱视角：从驾驶员眼睛看出去，仪表板 + HUD 框，前方敌机在群岛上空转弯
   shot(4, () => { clearAll(); A = mk('F-22', true); B = mk('Su-57'); fov(66); camera.near = 0.1; camera.updateProjectionMatrix(); }, (t) => {
-    const R = 20000, w = 240 / R, c = V3().set(ISL.x - 19600, 900, ISL.z - 1400);   // 大半径缓转，坡度约 15°
-    const pathB = (u) => V3().set(c.x + R * Math.cos(w * u), c.y + 30 * Math.sin(u * 0.25), c.z + R * Math.sin(w * u));
-    fly(B, pathB, t, 1); fly(A, (u) => pathB(u - 1.1).add(V3().set(0, 12, 0)), t, 0.95);
+    // 背着太阳朝 +X 平飞、轻微蛇行（坡度约 5°），岛在右前方
+    const pathB = (u) => V3().set(ISL.x - 1500 + 240 * u, 900 + 3 * Math.sin(u * 0.25), ISL.z + 250 + 15 * Math.sin(u * 0.25));
+    fly(B, pathB, t, 1); fly(A, (u) => pathB(u - 0.75).add(V3().set(0, 10, 0)), t, 0.95);
     A.mesh.position.copy(A.st.pos); A.mesh.quaternion.copy(A.st.q); A.mesh.updateMatrixWorld(true);
     camera.position.copy(A.mesh.localToWorld(eyePos('F-22').clone()));
-    camera.quaternion.copy(A.st.q).multiply(new THREE.Quaternion().setFromAxisAngle(UP, Math.PI));
+    camera.quaternion.copy(A.st.q).multiply(new THREE.Quaternion().setFromAxisAngle(UP, Math.PI)); setCanopyHidden(A, true);
     leadAim.ok = true; leadAim.target = B; leadAim.dist = A.st.pos.distanceTo(B.st.pos);
     A.firing = t > 2.4 && t < 3.4;
-    if (window.__DBG && Math.abs(t - 1.5) < 0.02) { const f = V3().set(0,0,1).applyQuaternion(A.st.q), u = V3().set(0,1,0).applyQuaternion(A.st.q), cu = V3().set(0,1,0).applyQuaternion(camera.quaternion), cf = camera.getWorldDirection(V3()); console.log('CK f=' + f.toArray().map(v=>v.toFixed(2)) + ' up=' + u.toArray().map(v=>v.toFixed(2)) + ' camUp=' + cu.toArray().map(v=>v.toFixed(2)) + ' camFwd=' + cf.toArray().map(v=>v.toFixed(2)) + ' eye=' + eyePos('F-22').toArray().map(v=>v.toFixed(2)) + ' g=' + A.st.g.toFixed(2)); }
   });
   // 6 导弹视角：发射 → 敌机放诱饵 → 命中慢镜头
   let MS = null, slow = 1;
@@ -193,7 +192,7 @@
       B.st.q.multiply(new THREE.Quaternion().setFromAxisAngle(V3().set(0, 0, 1), t * 2.2));   // 断翼后打转
       if (B.st.pos.y < 2) { B.scripted = false; hitGround(B); }
     }
-    look(V3().set(2700 + 330, 5, 6200 + 340), path(Math.min(t, 1.5)).lerp(V3().set(2600 + 110, 0, 6600), ease(Math.min(1, t / 2.2))));
+    look(V3().set(2700 + 330, 24, 6200 + 340), path(Math.min(t, 1.5)).lerp(V3().set(2600 + 110, 0, 6600), ease(Math.min(1, t / 2.2))));
   });
   // 8 航母弹射起飞
   shot(5, () => {
@@ -210,7 +209,7 @@
     look(carrierWorld(-16, 98, DECK_Y() + 3, V3()), A.st.pos.clone().addScaledVector(fwd, 6));
   });
   // 9 暴风雨：贴着海面仰拍，F-22 冲向地平线上那座巨大的积雨云，闪电劈下
-  const BOLTS = [[0.9, 9000, 12500], [2.7, 3800, 5200], [4.5, 10500, 15500]];
+  const BOLTS = [[0.9, 9000, 7000], [2.7, 7600, 2300], [4.5, 10500, 9000]];   // 近处一道要吓人
   shot(6, () => { clearAll(); applyWeather('storm'); A = mk('F-22', true); fov(52); nextBolt = 99; }, (t) => {
     const dir = V3().set(0.62, 0, 0.79).normalize(), side = V3().crossVectors(dir, UP).normalize();
     const base = V3().set(-9000, 0, 3000);
@@ -267,11 +266,6 @@
     const sdt = DT * (cur === 6 ? slow : 1);
     world(sdt);
     S[i].update(shotT, 0);   // 物理推进后再摆一次镜头，避免相机落后一帧
-    if (window.__DBG && (Math.abs(videoT - 31.5) < 0.02 || Math.abs(videoT - 46.2) < 0.02)) {
-      const live = bullets.filter((b) => b.life > 0).length;
-      const near = []; scene.traverse((o) => { if ((o.isMesh || o.isSprite) && o.visible) { const wp = o.getWorldPosition(V3()); const dd = wp.distanceTo(camera.position); if (dd < 60) near.push((o.material?.type || '') + '@' + dd.toFixed(1) + (o.userData.plume ? '[plume]' : '') + ' s=' + o.getWorldScale(V3()).toArray().map((v) => v.toFixed(2)).join('/')); } });
-      console.log('DBG t=' + videoT.toFixed(1) + ' bullets=' + live + ' firing=' + player.firing + ' near=' + near.join(' | '));
-    }
     render(DT);
     if (player.firing) EV.push({ t: videoT, k: 'cannonframe' });
     shotT += sdt; frame++;
