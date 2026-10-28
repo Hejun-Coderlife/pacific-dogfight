@@ -108,7 +108,7 @@
     if (Math.abs(t - 2.05) < DT / 2) ev('flyby', 1.2, A.st.pos);
   });
   // 3 侧面跟拍：F-22 在群岛上空缓转
-  shot(5, () => { clearAll(); A = mk('F-22', true); fov(38); }, (t) => {
+  shot(5, () => { clearAll(); applyWeather('dusk'); A = mk('F-22', true); fov(38); }, (t) => {
     const R = 5200, w = 230 / R, c = V3().set(ISL.x - R + 900, 0, ISL.z - 600);
     const path = (u) => V3().set(c.x + R * Math.cos(w * u + 0.2), 1150 + 25 * Math.sin(u * 0.25), c.z + R * Math.sin(w * u + 0.2));
     fly(A, path, t, 0.8);
@@ -155,7 +155,7 @@
   // 6 导弹视角：发射 → 敌机放诱饵 → 命中慢镜头
   let MS = null, slow = 1;
   shot(6, () => {
-    clearAll(); A = mk('F-22', true); B = mk('MiG-29'); fov(50); MS = null; slow = 1;
+    clearAll(); applyWeather('clear'); A = mk('F-22', true); B = mk('MiG-29'); fov(50); MS = null; slow = 1;
   }, (t) => {
     const sim = t;
     const pathB = (u) => V3().set(4000 + 250 * u, 2100 + 40 * Math.sin(u * 0.2), -9000 + 60 * u + 20 * u * u);
@@ -240,7 +240,7 @@
   });
   // 11 蓝天里拉起远去（片尾）
   shot(5, () => {
-    clearAll(); applyWeather('clear'); A = mk('F-22', true); fov(40);
+    clearAll(); applyWeather('dusk'); A = mk('F-22', true); fov(40);
     beds.push({ k: 'calm' });
   }, (t) => {
     const sun = V3().set(Math.sin(8 / 57.3), 0, Math.cos(8 / 57.3));

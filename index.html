@@ -686,6 +686,17 @@ function updateSun() {
   cloudGeo.attributes.iColor.needsUpdate = true;
 }
 const _gray = new THREE.Color();
+// 黄昏的云：向阳面金橙、背阴面被天光映成粉紫，远处背着太阳的云偏玫瑰色
+function duskClouds() {
+  const lit = new THREE.Color(1.35, 0.68, 0.38), rim = new THREE.Color(1.05, 0.5, 0.58), shade = new THREE.Color(0.32, 0.24, 0.42);
+  const arr = cloudGeo.attributes.iColor.array, c = new THREE.Color();
+  puffs.forEach((p, i) => {
+    const toSun = 0.5 + 0.5 * p.side.dot(sunDir), k = THREE.MathUtils.clamp(-0.15 + 0.75 * toSun + 0.45 * p.oy01, 0, 1);
+    c.copy(shade).lerp(rim, Math.min(1, k * 1.4)).lerp(lit, Math.max(0, k * 1.6 - 0.6));
+    arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
+  });
+  cloudGeo.attributes.iColor.needsUpdate = true;
+}
 updateSun();
 
 // ---------- 后期 ----------
@@ -732,7 +743,7 @@ function updateGodRays() {
   const W = WEATHER[weather];
   _sp.copy(camera.position).addScaledVector(sunDir, 5000).project(camera);
   const facing = camera.getWorldDirection(_b).dot(sunDir);
-  const k = W.night || W.storm || weather === 'overcast' ? 0 : smoothstep(0.1, 0.6, facing) * (1 - smoothstep(1.2, 1.9, Math.max(Math.abs(_sp.x), Math.abs(_sp.y))));
+  const k = W.night || W.storm || weather === 'overcast' ? 0 : (W.dusk ? 0.45 : 1) * smoothstep(0.1, 0.6, facing) * (1 - smoothstep(1.2, 1.9, Math.max(Math.abs(_sp.x), Math.abs(_sp.y))));
   godRays.uniforms.uSun.value.set(_sp.x * 0.5 + 0.5, _sp.y * 0.5 + 0.5); godRays.uniforms.uK.value = k;
 }
 
@@ -2241,7 +2252,7 @@ function drawRadar() {
 // sun 太阳高度°，turb/ray 天空散射，fogMul 雾浓度倍数，exp 曝光，dark 云变暗比例，rain 雨量，storm 闪电+乱流，night 月光+星空
 const WEATHER = {
   clear:    { cn: '晴天',   sun: 30, turb: 2, ray: 1, fogMul: 0.3, exp: 0.62, dark: 0,  rain: 0, mie: 0.003, dome: true },
-  dusk:     { cn: '黄昏',   sun: 5,  turb: 8,  ray: 2.2, fogMul: 1,   exp: 0.55, dark: 0,    rain: 0 },
+  dusk:     { cn: '黄昏',   sun: 3.5, turb: 6, ray: 2.2, fogMul: 0.4, exp: 0.52, dark: 0,    rain: 0, mie: 0.004, dome: true, dusk: true },
   noon:     { cn: '正午',   sun: 58, turb: 3,  ray: 1.0, fogMul: 0.7, exp: 0.4,  dark: 0,    rain: 0 },
   overcast: { cn: '阴天',   sun: 28, turb: 12, ray: 1.0, mie: 0.015, fogMul: 2.4, exp: 0.48, dark: 0.5,  rain: 0 },
   storm:    { cn: '暴风雨', dome: true, domeCols: [[0.2, 0.22, 0.26], [0.06, 0.07, 0.09], [0.27, 0.29, 0.32]], sun: 32, turb: 12, ray: 0.6, fogMul: 3.6, exp: 0.33, mie: 0.02,  dark: 0.72, rain: 1, storm: true },
@@ -2309,11 +2320,24 @@ const cirrus = (() => {
 })();
 // 夜空：地平线深蓝、头顶近黑的渐变穹顶，夜里替代散射天空
 const NIGHT_HORIZON = new THREE.Color(0.035, 0.06, 0.13), NIGHT_ZENITH = new THREE.Color(0.004, 0.007, 0.02);
+const DUSK_HAZE = new THREE.Color(0.86, 0.5, 0.5);
 const DAY_HORIZON = new THREE.Color(0.42, 0.66, 1.05), DAY_ZENITH = new THREE.Color(0.04, 0.17, 0.6), DAY_HAZE = new THREE.Color(0.86, 0.91, 1.0), NIGHT_HAZE = new THREE.Color(0.05, 0.08, 0.15);
 const nightSky = new THREE.Mesh(new THREE.SphereGeometry(9800, 32, 16), new THREE.ShaderMaterial({
-  uniforms: { uH: { value: NIGHT_HORIZON.clone() }, uZ: { value: NIGHT_ZENITH.clone() }, uHaze: { value: new THREE.Color() }, uSun: { value: new THREE.Vector3() }, uSunK: { value: 0 }, uNight: { value: 0 } },
+  uniforms: { uH: { value: NIGHT_HORIZON.clone() }, uZ: { value: NIGHT_ZENITH.clone() }, uHaze: { value: new THREE.Color() }, uSun: { value: new THREE.Vector3() }, uSunK: { value: 0 }, uNight: { value: 0 }, uDusk: { value: 0 } },
   vertexShader: 'varying vec3 vD; void main() { vD = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
-  fragmentShader: `uniform vec3 uH; uniform vec3 uZ; uniform vec3 uHaze; uniform vec3 uSun; uniform float uSunK; uniform float uNight; varying vec3 vD;
+  fragmentShader: `uniform vec3 uH; uniform vec3 uZ; uniform vec3 uHaze; uniform vec3 uSun; uniform float uSunK; uniform float uNight; uniform float uDusk; varying vec3 vD;
+    // 日落后的霞光：太阳一侧地平线金橙→粉→淡紫→头顶深蓝；背向太阳一侧是地影上方的粉色「维纳斯带」
+    vec3 duskSky(vec3 d) {
+      float y = max(d.y, 0.0);
+      float sa = dot(normalize(d.xz + 1e-5), normalize(uSun.xz + 1e-5)) * 0.5 + 0.5, anti = 1.0 - sa;
+      vec3 low = mix(vec3(0.9, 0.42, 0.55), vec3(1.25, 0.5, 0.17), pow(max(sa, 1e-4), 2.2));
+      vec3 mid = mix(vec3(0.36, 0.28, 0.6), vec3(0.78, 0.36, 0.5), pow(max(sa, 1e-4), 3.0));
+      vec3 c = mix(low, mid, smoothstep(0.0, 0.2, y));
+      c = mix(c, vec3(0.07, 0.11, 0.36), smoothstep(0.12, 0.8, y));
+      c = mix(c, vec3(0.34, 0.37, 0.58), anti * anti * (1.0 - smoothstep(0.0, 0.045, y)) * 0.75);
+      c += vec3(0.42, 0.16, 0.26) * anti * anti * exp(-pow((y - 0.09) / 0.06, 2.0));
+      return c;
+    }
     float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
     float n3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
@@ -2323,10 +2347,12 @@ const nightSky = new THREE.Mesh(new THREE.SphereGeometry(9800, 32, 16), new THRE
       float y = max(d.y, 0.0);
       vec3 c = mix(uH, uZ, pow(y, 0.42));
       float haze = exp(-y * 10.0);
-      c = mix(c, uHaze, haze * 0.8);   // 地平线附近一圈发白的雾霭
+      c = mix(c, uHaze, haze * 0.8);
+      if (uDusk > 0.5) c = mix(duskSky(d), uHaze, haze * 0.08);   // 地平线附近一圈发白的雾霭
       float s = max(dot(d, uSun), 0.0);
-      c += uSunK * (vec3(30.0, 28.0, 24.0) * pow(s, 2200.0) + vec3(1.3, 1.2, 1.0) * pow(s, 90.0) * 0.5
-                  + vec3(1.0, 0.95, 0.82) * pow(s, 7.0) * (0.12 + 0.35 * haze));   // 太阳圆盘 + 光晕 + 太阳一侧的散射
+      vec3 st = mix(vec3(1.0), vec3(1.0, 0.55, 0.22), uDusk);   // 黄昏的太阳是橙色的，光晕更大
+      c += uSunK * st * (vec3(30.0, 28.0, 24.0) * pow(s, 2200.0) + vec3(1.3, 1.2, 1.0) * pow(s, 90.0) * 0.5
+                  + vec3(1.0, 0.95, 0.82) * pow(s, 7.0) * (0.12 + 0.35 * haze) * (1.0 - 0.6 * uDusk));   // 太阳圆盘 + 光晕 + 太阳一侧的散射
       // 银河：一条倾斜的光带，带噪声的明暗
       vec3 gn = normalize(vec3(0.35, 0.55, 0.76));
       float band = exp(-pow(dot(d, gn) / 0.16, 2.0));
@@ -2487,18 +2513,20 @@ function applyWeather(id) {
     const U = nightSky.material.uniforms;
     U.uH.value.copy(W.night ? NIGHT_HORIZON : DAY_HORIZON); U.uZ.value.copy(W.night ? NIGHT_ZENITH : DAY_ZENITH);
     if (W.domeCols) { U.uH.value.setRGB(...W.domeCols[0]); U.uZ.value.setRGB(...W.domeCols[1]); }
-    U.uSun.value.copy(sunDir); U.uSunK.value = W.night || W.storm ? 0 : 1; U.uNight.value = W.night ? 1 : 0; U.uHaze.value.copy(W.night ? NIGHT_HAZE : DAY_HAZE);
+    U.uSun.value.copy(sunDir); U.uSunK.value = W.night || W.storm ? 0 : 1; U.uNight.value = W.night ? 1 : 0; U.uDusk.value = W.dusk ? 1 : 0; U.uHaze.value.copy(W.night ? NIGHT_HAZE : W.dusk ? DUSK_HAZE : DAY_HAZE);
     if (W.domeCols) U.uHaze.value.setRGB(...W.domeCols[2]);
     // 环境光照、海面倒影的天空也换成这个穹顶
     scene.remove(nightSky); envScene.add(nightSky); nightSky.position.set(0, 0, 0);
     if (envRT) envRT.dispose(); envRT = pmrem.fromScene(envScene); scene.environment = envRT.texture;
     envScene.remove(nightSky); scene.add(nightSky);
-    scene.fog.color.copy(U.uHaze.value).multiplyScalar(W.night ? 1.2 : 0.92);
+    scene.fog.color.copy(U.uHaze.value).multiplyScalar(W.night ? 1.2 : W.dusk ? 0.8 : 0.92);
+    if (W.dusk) duskClouds();
     for (const m of [cloudMat, smokeFx.mat, glowFx.mat]) m.uniforms.fogColor.value = scene.fog.color;
   }
   rain.visible = W.rain > 0;
-  cirrus.material.uniforms.uK.value = W.night || W.storm || weather === 'overcast' ? 0 : 0.55;
+  cirrus.material.uniforms.uK.value = W.night || W.storm || weather === 'overcast' ? 0 : W.dusk ? 0.8 : 0.55;
   cirrus.material.uniforms.uCol.value.copy(sunLight.color).multiplyScalar(0.9 + 0.2 * Math.min(1, sunLight.intensity / 3));
+  if (W.dusk) cirrus.material.uniforms.uCol.value.setRGB(1.5, 0.7, 0.62);   // 高空卷云被晚霞染成粉橙
   stormCell.visible = !!W.storm; if (W.storm) colorStormCell(0);
   water.material.uniforms.distortionScale.value = W.storm ? 14 : 8;
   rain.material.uniforms.uRes.value = innerHeight;
