@@ -44,6 +44,18 @@
   .mslmk { position: absolute; left: 0; top: 0; color: #ff4d3d; font-size: 11px; }
   .mslmk::before { content: ''; position: absolute; width: 0; height: 0; margin: -8px 0 0 -6px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 14px solid #ff4d3d; transform: rotate(var(--r, 0deg)); }
   .mslmk span { position: absolute; left: 10px; top: -16px; white-space: nowrap; }
+  #lnd { position: absolute; left: 0; top: 0; color: #6fb7ff; font-size: 12px; opacity: 0; }
+  #lnd::before { content: ''; position: absolute; width: 26px; height: 14px; margin: -8px 0 0 -14px; border: 2px solid #6fb7ff; }
+  #lnd span { position: absolute; left: 18px; top: -8px; white-space: nowrap; }
+  #obj { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #8ef0a8; letter-spacing: .05em; }
+  #radar { position: absolute; right: 16px; bottom: 30px; width: 200px; height: 200px; }
+  #result { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(4,8,14,.5); z-index: 6; }
+  #result .card { text-align: center; color: #eef2f6; background: rgba(10,14,20,.75); backdrop-filter: blur(10px); padding: 26px 40px; border-radius: 14px; min-width: 340px; }
+  #result h1 { margin: 0; font-size: 28px; letter-spacing: .3em; }
+  #rstars { font-size: 26px; color: #ffd27a; margin: 6px 0 12px; letter-spacing: .2em; }
+  #rstats { margin: 0 auto 14px; font-size: 14px; line-height: 1.9; } #rstats td:first-child { color: #9aa6b4; padding-right: 22px; text-align: right; } #rstats td:last-child { text-align: left; }
+  #result button { margin: 0 6px; padding: 8px 22px; border-radius: 8px; border: 1px solid #ffd27a; background: #1a1f28; color: #ffd27a; cursor: pointer; font: 14px -apple-system, "PingFang SC", sans-serif; }
+  .tgt.friend { color: #6fb7ff; } .tgt.friend::before { border-color: #6fb7ff; border-radius: 50%; }
   #credit { position: fixed; right: 12px; bottom: 8px; color: rgba(255,255,255,.55); font-size: 10px; z-index: 5; pointer-events: none; }
   .tgt { position: absolute; left: 0; top: 0; color: #ff9a82; font-size: 11px; font-weight: 400; }
   .tgt::before { content: ''; position: absolute; width: 22px; height: 22px; margin: -12px 0 0 -12px; border: 1.5px solid rgba(255,110,90,.9); border-radius: 3px; }
@@ -63,6 +75,7 @@
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa6b4;
              font-size: 13px; letter-spacing: .3em; background: #05070a; transition: opacity .9s; pointer-events: none; }
 </style>
+<script src="assets/models/CVN-78-deck.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
@@ -79,17 +92,27 @@
   <div id="bt">油门 <span id="thr">0</span>% · <span id="gl">1.0</span> G · 航向 <span id="hdg">000</span>° · 导弹 <span id="msl">2</span>/2</div>
   <div id="lead"></div><div id="kills">击落 <span id="kn">0</span><br><small>机体 <span id="hpv">100</span>% · 热诱弹 <span id="flv">30</span></small></div><div id="msg"></div>
   <div id="dmg"></div>
+  <div id="obj"></div>
+  <div id="lnd"><span></span></div>
+  <canvas id="radar" width="200" height="200"></canvas>
   <div id="warn"></div>
 </div>
 <div id="start">
   <div class="card">
     <h1>太平洋空战</h1>
     <div id="hangar"></div>
+    <div class="opts">任务 <span id="mis"><button data-v="free" class="sel">自由空战</button><button data-v="timed">限时歼灭</button><button data-v="escort">护航轰炸机</button><button data-v="defend">保卫航母</button></span></div>
+    <div class="opts">起飞 <span id="spm"><button data-v="air" class="sel">空中出发</button><button data-v="deck">航母弹射</button></span></div>
     <div class="opts">难度 <span id="diff"><button data-v="rookie">新兵</button><button data-v="vet" class="sel">老手</button><button data-v="ace">王牌</button></span></div>
     <p class="go">选好机型，点击空白处开始</p>
-    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头距离 · R 重新起飞 · Esc 暂停</p>
+    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · G 起落架 · T 弹射 · M 雷达量程 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头距离 · R 重新起飞 · Esc 暂停</p>
   </div>
 </div>
+<div id="result"><div class="card">
+  <h1 id="rtitle">任务成功</h1><div id="rstars"></div>
+  <table id="rstats"></table>
+  <p><button id="again">再来一次</button><button id="tohangar">返回机库</button></p>
+</div></div>
 <div id="credit">机模：bohmerang（10 款）、outpiston（F-117）· Sketchfab · CC BY-NC-SA 4.0</div>
 <div id="ui">
   太阳高度 <input id="sun" type="range" min="1" max="40" step="0.5" value="5"> <span id="sunv">5°</span>
@@ -621,6 +644,7 @@ function groundH(x, z) {
   const cx0 = Math.floor(x / CELL), cz0 = Math.floor(z / CELL);
   for (let cx = cx0 - 1; cx <= cx0 + 1; cx++) for (let cz = cz0 - 1; cz <= cz0 + 1; cz++)
     for (const I of cellIslands(cx, cz)) if (Math.abs(x - I.x) < I.r * 1.35 && Math.abs(z - I.z) < I.r * 1.35) h = Math.max(h, islandH(I, x, z));
+  if (CARRIER.mesh && Math.abs(x - CARRIER.pos.x) < 200 && Math.abs(z - CARRIER.pos.z) < 200) h = Math.max(h, deckH(x, z));
   return h;
 }
 
@@ -846,7 +870,9 @@ function hitSpheres(j) {
   }
   return out.map(([n, c, r]) => ({ n, c: new THREE.Vector3(...c), r }));
 }
-for (const id of JET_IDS) JETS[id].hit = hitSpheres(JETS[id]);
+// 护航任务的 B-2（不进机库、不当敌机）
+JETS['B-2'] = { cn: 'B-2 幽灵', len: 21, span: 52.4, mass: 70000, S: 478, T: 300000, nx: 3, g: 3, aStall: 0.3, roll: 1.2, vSL: 1000, vAlt: 1010, noAB: true };
+for (const id of [...JET_IDS, 'B-2']) JETS[id].hit = hitSpheres(JETS[id]);
 
 // ---------- 飞机：命中球 / 血量 / 涂装 ----------
 const HP0 = { engine: 120, pilot: 30, fuse: 260, wingL: 160, wingR: 160, tail: 120 };
@@ -875,6 +901,7 @@ class Aircraft {
     this.nozzles = (j.nx ? [j.nx, -j.nx] : [0]).map((x) => new THREE.Vector3(x, 0, -j.len * 0.47));
     this.gun = new THREE.Vector3(-0.5, 0.35, j.len * 0.3);
     this.mesh = jetMesh(type); this.prop = null; this.parts = {}; scene.add(this.mesh);
+    this.onDeck = false; this.landed = false; this.arrested = false; this.catT = undefined; this.catReady = false;
     this.plumes = this.nozzles.map((nz) => { const pm = makePlume(); pm.position.copy(nz); this.mesh.add(pm); return pm; });
     const st = this.st;
     st.pos.copy(pos); this.mesh.position.copy(pos); this.mesh.lookAt(_a.copy(pos).add(fwd)); st.q.copy(this.mesh.quaternion);
@@ -886,6 +913,7 @@ class Aircraft {
     this.evadeUntil = 0; this.lastHit = -99; this.lastAttacker = null;
     mountMissiles(this);
     this.flares = 30; this.lockT = 0;
+    setGear(this, false);
   }
 }
 
@@ -906,7 +934,7 @@ function physicsStep(ac, dt) {
   const nLost = ac.lost.wingL + ac.lost.wingR + ac.lost.tail;
   const thrustMul = ac.engineDead ? 0 : ac.hp.engine < HP0.engine / 2 ? 0.6 : 1;
   const CL = (stalled ? Math.sign(alpha) * ac.fm.CLa * ac.fm.aStall * Math.max(0.45, 1 - (aa - ac.fm.aStall) * 2.2) : ac.fm.CLa * alpha) * (liftL + liftR) / 2;
-  const CD = ac.fm.K * CL * CL + (stalled ? 0.35 * (aa - ac.fm.aStall) : 0) + 0.3 * beta * beta + nLost * 0.025;
+  const CD = ac.fm.K * CL * CL + (stalled ? 0.35 * (aa - ac.fm.aStall) : 0) + 0.3 * beta * beta + nLost * 0.025 + (ac.gear ? 0.04 : 0);
   // 推力随空气变稀而下降；油门 85% 以上进加力，军推约为最大推力的 60%
   const Tfull = ac.fm.Tmax * (ac.jet.noAB ? 1.4 : 1) * Math.pow(sigma, 0.7);
   const thr = ac.jet.noAB ? st.thr : st.thr <= 0.85 ? st.thr / 0.85 * 0.6 : 0.6 + (st.thr - 0.85) / 0.15 * 0.4;
@@ -946,6 +974,7 @@ function physicsStep(ac, dt) {
   if (wl > 1e-6) { _dq.setFromAxisAngle(_a.copy(st.w).divideScalar(wl), wl * dt); st.q.multiply(_dq).normalize(); }
 
   st.alpha = alpha; st.V = V; st.mach = V / Math.max(295, 340 - 0.0041 * h); st.stalled = stalled; st.qd = qd; st.aMax = aMax;
+  if (ac === player && (catapultStep(ac, dt) || deckContact(ac, dt))) return;
   if (st.pos.y < groundH(st.pos.x, st.pos.z) + 1.5) hitGround(ac);
 }
 
@@ -968,7 +997,9 @@ function autopilot(ac) {
   ctrl.roll = clamp1(rollTarget * 3 - st.w.z * 0.7);
   const aFF = ac.fm.mass * 9.81 * Math.max(0, upB.y) / Math.max(st.qd * ac.fm.S * ac.fm.CLa, 1);
   // 让炮线对准准星：准星压在哪，炮弹就打到哪（GUN_DOWN 补偿炮线下倾）
-  ctrl.pitch = clamp1(Math.atan2(d.y, d.z) * 10 + st.w.x * 0.4 + aFF / st.aMax);
+  // 放下起落架（进近着舰）时改成让航迹对准准星：低速大迎角时机头比航迹高很多，按炮线飞会一路扎进海里
+  const pErr = ac.gear ? Math.atan2(d.y, d.z) - GUN_DOWN + st.alpha : Math.atan2(d.y, d.z);
+  ctrl.pitch = clamp1(pErr * 10 + st.w.x * 0.4 + aFF / st.aMax);
   ctrl.yaw = clamp1(Math.atan2(-d.x, d.z) * 8);
   if (!ac.isPlayer) return;
   if (keys.KeyA) ctrl.roll = -1; if (keys.KeyD) ctrl.roll = 1;
@@ -990,7 +1021,9 @@ function enemyBrain(ac, dt) {
   const st = ac.st, D = DIFF[difficulty];
   ac.firing = false;
   if (ac.pilotDead) { ac.ctrl.pitch = -0.1; ac.ctrl.roll = 0.15; ac.ctrl.yaw = 0; return; }
-  const P = player.alive && !player.doomed ? player : null;
+  if (ac.prey === 'carrier' && !(ac.mode === 'missile')) { strikeBrain(ac, dt); return; }
+  const prey = ac.prey && ac.prey !== 'carrier' && ac.prey.alive && !ac.prey.doomed ? ac.prey : null;
+  const P = prey || (player.alive && !player.doomed ? player : null);
   const toP = P ? _e1.subVectors(P.st.pos, st.pos) : null, dist = P ? toP.length() : 1e9;
   const nose = _e2.set(0, -GUN_DOWN, 1).normalize().applyQuaternion(st.q);
   const threat = missiles.find((m) => m.target === ac && m.pos.distanceTo(st.pos) < 3500);
@@ -1049,11 +1082,11 @@ function enemyBrain(ac, dt) {
 const _e1 = V3(), _e2 = V3(), _e3 = V3(), _e4 = V3();
 let player = null;
 const spawnQueue = [];
-function spawnEnemy() {
+function spawnEnemy(around) {
   // 敌机从已加载、且和玩家不同的机型里随机挑
   const pool = JET_IDS.filter((id) => jetGLTF[id] && id !== player.type);
   const type = pool.length ? pool[Math.floor(Math.random() * pool.length)] : player.type;
-  const ac = new Aircraft(false), p = player.st.pos, ang = rand(0, 6.28), dist = rand(4000, 7000);
+  const ac = new Aircraft(false), p = around || player.st.pos, ang = rand(0, 6.28), dist = around ? rand(9000, 13000) : rand(4000, 7000);
   const pos = V3().set(p.x + Math.cos(ang) * dist, rand(900, 2500), p.z + Math.sin(ang) * dist);
   pos.y = Math.max(pos.y, groundH(pos.x, pos.z) + 500);
   ac.home = pos.clone().add(_a.set(rand(-1500, 1500), 0, rand(-1500, 1500)));
@@ -1093,7 +1126,7 @@ function debrisChunk(ac, name) {
 function credit(ac) {
   if (ac.doomed) return;
   ac.doomed = true;
-  if (ac === player) showWarn('被击落 · 按 R 重新起飞', true);
+  if (ac === player) { showWarn('被击落 · 按 R 重新起飞', true); stats.deaths++; }
   if (ac !== player && ac.lastAttacker === player) { kills++; showMsg('击落！'); }
 }
 function checkDamage(ac) {
@@ -1116,7 +1149,7 @@ function applyHit(ac, part, wp, attacker) {
   ac.hp[part] -= 14 * rand(0.7, 1.3);
   ac.lastHit = gameTime; ac.lastAttacker = attacker;
   fxSparks(wp, ac.st.vel);
-  if (attacker === player) { hitMark(); ac.playerHitT = gameTime; }
+  if (attacker === player) { hitMark(); ac.playerHitT = gameTime; stats.hits++; }
   if (ac === player) playerHurt(0.35);
   if ((part === 'engine' && Math.random() < 0.06) || ((part === 'wingL' || part === 'wingR') && Math.random() < 0.025)) ac.onFire = true;
   if (!ac.isPlayer && !ac.pilotDead && gameTime > ac.evadeUntil - 1.5) {
@@ -1135,7 +1168,7 @@ function hitGround(ac) {
   if (onWater && (ac.onFire || ac.exploded)) fxExplosion(p, ZERO, 0.5);
   ac.mesh.visible = false;
   if (!ac.doomed && ac !== player && ac.lastAttacker === player && gameTime - ac.lastHit < 10) credit(ac);
-  if (ac === player) { ac.st.vel.set(0, 0, 0); showWarn('坠毁 · 按 R 重新起飞', true); }
+  if (ac === player) { ac.st.vel.set(0, 0, 0); showWarn('坠毁 · 按 R 重新起飞', true); if (!ac.doomed) stats.deaths++; }
 }
 function updateDebris(dt) {
   for (let i = debris.length - 1; i >= 0; i--) {
@@ -1231,6 +1264,7 @@ function volley(ac) {
     if (want.dot(dir) > Math.cos(leadAim.dist < 1500 ? 0.14 : 0.07)) dir.copy(want);
   }
   dir.add(rr(0.0015)).normalize();
+  if (ac === player) stats.shots++;
   const b = bullets[bHead]; bHead = (bHead + 1) % MAXB;
   b.p.copy(mp); b.v.copy(ac.st.vel).addScaledVector(dir, GUN_V); b.life = 3; b.owner = ac;
   b.tracer = (ac.tracerN++ % 3) === 0;
@@ -1252,7 +1286,7 @@ function updateBullets(dt) {
     b.v.y -= 9.81 * dt;
     b.p.addScaledVector(b.v, dt);
     for (const ac of aircraft) {
-      if (ac === b.owner || !ac.alive) continue;
+      if (ac === b.owner || !ac.alive || (ac.friendly && b.owner === player)) continue;
       const st = ac.st;
       if (p0.distanceToSquared(st.pos) > (8 + b.v.length() * dt) ** 2) continue;
       // 用相对速度把这一帧的弹道段换到目标机体系里做球体检测
@@ -1328,7 +1362,7 @@ function updateLock(dt) {
   const st = player.st, nose = _a.set(0, 0, 1).applyQuaternion(st.q);
   let best = null, bestCos = Math.cos(0.35);
   for (const ac of aircraft) {
-    if (ac === player || !ac.alive || ac.doomed) continue;
+    if (ac === player || !ac.alive || ac.doomed || ac.friendly) continue;
     const r = _b.subVectors(ac.st.pos, st.pos), d = r.length();
     if (d > 8000) continue;
     const c = r.dot(nose) / d;
@@ -1341,6 +1375,7 @@ function updateLock(dt) {
 function launchMissile(ac, tgt) {
   if (!ac.alive || !ac.slots) return;
   if (ac === player) tgt = lock.t >= 1 ? lock.target : null;
+  if (ac === player && ac.slots.some((s) => s.ready)) stats.msl++;
   for (let k = 0; k < ac.slots.length; k++) {
     const s = ac.slots[(ac.nextSlot + k) % ac.slots.length];
     if (!s.ready) continue;
@@ -1443,6 +1478,7 @@ function updateFlares(dt) {
     if ((f.life -= dt) <= 0) { f.alive = false; flares.splice(i, 1); }
   }
 }
+function sfxTouchdown(k) { playBuf(audio?.boom, 0.3 + 0.5 * k, 320, 'lowpass', 1.6); }
 function sfxFlare() { playBuf(audio?.tick, 0.6, 1800, 'bandpass', 0.5); }
 function sfxLaunch() { playBuf(audio?.boom, 0.5, 1400, 'bandpass', 1.8); }
 
@@ -1588,13 +1624,13 @@ function updateHUD(dt) {
       x = innerWidth / 2 + dx / m * (innerWidth / 2 - 30); y = innerHeight / 2 + dy / m * (innerHeight / 2 - 30);
     }
     const lk = !off && ac === lock.target ? (lock.t >= 1 ? ' locked' : ' locking') : '';
-    el.className = 'tgt' + (off ? ' off' : '') + (ac.doomed ? ' down' : '') + lk;
+    el.className = 'tgt' + (off ? ' off' : '') + (ac.doomed ? ' down' : '') + (ac.friendly ? ' friend' : '') + lk;
     el.style.opacity = 1; el.style.transform = `translate(${x}px, ${y}px)`;
     const justHit = gameTime - (ac.playerHitT ?? -9) < 0.5;
     el.classList.toggle('hit', justHit);
     el.firstChild.textContent = off ? '' : (justHit ? '命中 ' : lk === ' locked' ? '锁定 ' : '') + (dist < 1000 ? Math.round(dist) + ' m' : (dist / 1000).toFixed(1) + ' km');
     const cosA = _b.subVectors(ac.st.pos, st.pos).normalize().dot(nose);
-    if (!ac.doomed && dist < 3000 && cosA > Math.cos(0.6) && cosA > leadBest) { leadBest = cosA; leadTgt = ac; }
+    if (!ac.doomed && !ac.friendly && dist < 3000 && cosA > Math.cos(0.6) && cosA > leadBest) { leadBest = cosA; leadTgt = ac; }
   }
   for (; k < tgtEls.length; k++) tgtEls[k].style.opacity = 0;
   // 提前量：子弹飞到目标所需时间内，目标相对我方的位移 + 子弹下坠
@@ -1607,9 +1643,19 @@ function updateHUD(dt) {
     hud.lead.classList.toggle('fire', leadAim.dist < 1200 && gunDir.dot(toLead) > Math.cos(0.14));
   } else { hud.lead.style.opacity = 0; hud.lead.classList.remove('fire'); leadAim.ok = false; leadAim.target = null; }
 
+  // 着舰引导：放下起落架、离航母 6 km 内时标出着舰点，提示下滑道高低和速度
+  const lndEl = $('lnd');
+  if (CARRIER.mesh && player.gear && !player.onDeck && player.alive) {
+    const td = carrierWorld(0, -115, DECK_Y(), _m1), flat = Math.hypot(td.x - st.pos.x, td.z - st.pos.z);
+    if (flat < 6000) {
+      place(lndEl, td);
+      const ideal = flat * Math.tan(3.5 / 57.3), hgt = st.pos.y - td.y, kmh = st.V * 3.6;
+      lndEl.firstChild.textContent = `${(flat / 1000).toFixed(1)} km · ${hgt > ideal + 15 ? '偏高' : hgt < ideal - 15 ? '偏低' : '下滑道正好'}${kmh > 380 ? ' · 减速' : kmh < 260 ? ' · 加油门' : ''}`;
+    } else lndEl.style.opacity = 0;
+  } else lndEl.style.opacity = 0;
   if (warnSticky) return;
   const agl = st.pos.y - groundH(st.pos.x, st.pos.z);
-  const incoming = missiles.some((m) => m.target === player), locked = aircraft.some((a) => a !== player && a.alive && a.lockT > 0.4);
+  const incoming = missiles.some((m) => m.target === player), locked = aircraft.some((a) => a !== player && a.alive && a.lockT > 0.4 && (!a.prey || a.prey === player));
   if (incoming) showWarn('导弹来袭！按 X 放热诱弹');
   else if (locked) showWarn('被锁定');
   else if (st.stalled) showWarn('失速');
@@ -1622,10 +1668,18 @@ const startEl = $('start');
 const params = new URLSearchParams(location.search);
 let running = params.has('autostart'), mouseDown = false;
 if (running) startEl.style.display = 'none';
-startEl.addEventListener('click', (e) => { if (e.target.closest('#hangar') || e.target.closest('.opts') || !booted) return; renderer.domElement.requestPointerLock(); initAudio(); });
+startEl.addEventListener('click', (e) => {
+  if (e.target.closest('#hangar') || e.target.closest('.opts') || !booted) return;
+  if (missionDirty || M.result) startMission();
+  renderer.domElement.requestPointerLock(); initAudio();
+});
+for (const [id, set] of [['mis', (v) => { missionId = v; }], ['spm', (v) => { spawnMode = v; }]])
+  for (const b of $(id).children) b.addEventListener('click', () => { set(b.dataset.v); missionDirty = true; for (const x of $(id).children) x.classList.toggle('sel', x === b); });
+$('again').addEventListener('click', () => { $('result').style.display = 'none'; startMission(); renderer.domElement.requestPointerLock(); initAudio(); });
+$('tohangar').addEventListener('click', () => { $('result').style.display = 'none'; missionDirty = true; startEl.style.display = 'flex'; });
 document.addEventListener('pointerlockchange', () => {
   running = document.pointerLockElement === renderer.domElement;
-  startEl.style.display = running ? 'none' : 'flex';
+  startEl.style.display = running || M.result ? 'none' : 'flex';
   if (!running) { mouseDown = false; if (audio) audio.ac.suspend(); }
 });
 addEventListener('mousedown', (e) => { if (running && e.button === 0) mouseDown = true; if (running && e.button === 2) launchMissile(player); });
@@ -1647,7 +1701,10 @@ function respawnPlayer(first) {
 }
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
-  if (e.code === 'KeyR') respawnPlayer(false);
+  if (e.code === 'KeyR') { if (spawnMode === 'deck') spawnOnDeck(); else respawnPlayer(false); }
+  if (e.code === 'KeyG' && running && player.alive && !player.onDeck) { setGear(player, !player.gear); showMsg(player.gear ? '起落架放下' : '起落架收起'); }
+  if (e.code === 'KeyT' && running && player.catReady) { if (player.st.thr < 0.95) showMsg('先把油门推满（W）'); else { player.catReady = false; player.catT = 2.6; showWarn(''); sfxLaunch(); } }
+  if (e.code === 'KeyM') radarRange = radarRange === 6000 ? 12000 : radarRange === 12000 ? 24000 : 6000;
   if (e.code === 'KeyF' && running && !e.repeat) launchMissile(player);
   if (e.code === 'KeyX' && running && player.alive) dropFlares(player);
   if (e.code === 'KeyC' && !cam.free) { cam.free = true; freeYaw = aimYaw; freePitch = aimPitch; }
@@ -1666,6 +1723,260 @@ addEventListener('resize', () => {
 });
 
 // ---------- 主循环 ----------
+// ---------- 航母（福特号，停在起始海域；甲板高度图由 Blender 预采样） ----------
+const CARRIER = { pos: new THREE.Vector3(1800, 24.9, -600), heading: 0.35, mesh: null, hp: 100 };
+function carrierLocal(x, z) {
+  const dx = x - CARRIER.pos.x, dz = z - CARRIER.pos.z, c = Math.cos(CARRIER.heading), s = Math.sin(CARRIER.heading);
+  return [dx * c - dz * s, dx * s + dz * c];   // [横向 x, 纵向 z]，舰首朝 +z
+}
+function carrierWorld(lx, lz, y, out) {
+  const c = Math.cos(CARRIER.heading), s = Math.sin(CARRIER.heading);
+  return out.set(CARRIER.pos.x + lx * c + lz * s, y, CARRIER.pos.z - lx * s + lz * c);
+}
+function deckH(x, z) {
+  const D = window.DECKDATA;
+  if (!CARRIER.mesh || !D) return -Infinity;
+  const [lx, lz] = carrierLocal(x, z);
+  const j = Math.round((lx - D.x0) / D.step), i = Math.round((lz - D.z0) / D.step);
+  if (i < 0 || j < 0 || i >= D.nz || j >= D.nx) return -Infinity;
+  const h = D.h[i][j];
+  return h === null ? -Infinity : CARRIER.pos.y + h;
+}
+function placeCarrier() {
+  if (CARRIER.mesh || !jetGLTF['CVN-78']) return;
+  CARRIER.mesh = jetMesh('CVN-78');
+  CARRIER.mesh.position.copy(CARRIER.pos); CARRIER.mesh.rotation.y = CARRIER.heading;
+  scene.add(CARRIER.mesh);
+}
+const CARRIER_FWD = () => V3().set(Math.sin(CARRIER.heading), 0, Math.cos(CARRIER.heading));
+const DECK_Y = () => CARRIER.pos.y - 6.0;
+
+// 起落架开关（模型里保留的 GEAR_* 节点）
+function setGear(ac, down) {
+  ac.gear = down;
+  ac.mesh.traverse((n) => { if (n.name && n.name.startsWith('GEAR_')) n.visible = down; });
+}
+// 甲板接触：起落架放下、下沉率/坡度/俯仰合适才算着舰，否则交给坠毁判定
+function deckContact(ac, dt) {
+  const st = ac.st, dh = deckH(st.pos.x, st.pos.z);
+  if (dh === -Infinity) { ac.onDeck = false; return false; }
+  const gearH = ac.jet.len * 0.11, clear = st.pos.y - dh - gearH;
+  if (clear > 0.6 && !ac.onDeck) return false;
+  if (clear > 1.5) { ac.onDeck = false; return false; }   // 离舰
+  const f = _d1.set(0, 0, 1).applyQuaternion(st.q), upB = _d2.set(0, 1, 0).applyQuaternion(_qInv.copy(st.q).invert());
+  const bank = Math.atan2(upB.x, upB.y), pitch = Math.asin(THREE.MathUtils.clamp(f.y, -1, 1));
+  const onDeckLevel = dh < DECK_Y() + 2;   // 舰岛等上层建筑不能落
+  if (!ac.onDeck && !(ac.gear && onDeckLevel && st.vel.y > -8 && Math.abs(bank) < 0.35 && pitch > -0.12 && pitch < 0.4)) return false;
+  if (!ac.onDeck) { ac.onDeck = true; sfxTouchdown(Math.min(1, -st.vel.y / 6)); }
+  // 贴住甲板，机身摆平（只保留航向和一点抬头）
+  st.pos.y = dh + gearH; if (st.vel.y < 0) st.vel.y = 0;
+  const yaw = Math.atan2(f.x, f.z);
+  _dq2.setFromEuler(_eu.set(-Math.max(0, Math.min(pitch, 0.12)), yaw, 0, 'YXZ'));
+  st.q.slerp(_dq2, Math.min(1, dt * 8)); st.w.multiplyScalar(0.8);
+  const [lx, lz] = carrierLocal(st.pos.x, st.pos.z);
+  // 拦阻索：甲板后段钩住，3G 减速拉停
+  if (!ac.arrested && ac.gear && lz < -70 && lz > -150 && ac.catT === undefined) { ac.arrested = true; sfxTouchdown(1); showMsg('挂索！'); }
+  const fwd = _d3.copy(st.vel).setY(0);
+  const sp = fwd.length();
+  if (sp > 0.01) {
+    const decel = ac.arrested ? 30 : st.thr < 0.4 ? 6 : 0;
+    fwd.multiplyScalar(Math.max(0, sp - decel * dt) / sp);
+    st.vel.x = fwd.x; st.vel.z = fwd.z;
+  }
+  if (ac.arrested && sp < 1.5 && !ac.landed) { ac.landed = true; st.vel.set(0, 0, 0); showMsg('着舰成功！'); missionEvent('landed'); }
+  if (Math.abs(lx) > 44 || lz > 172) ac.onDeck = false;   // 滑出甲板
+  return true;
+}
+const _d1 = V3(), _d2 = V3(), _d3 = V3(), _dq2 = new THREE.Quaternion(), _eu = new THREE.Euler();
+// 甲板弹射：舰首右侧弹射器，2.5 秒加速到约 300 km/h
+function spawnOnDeck() {
+  const fwd = CARRIER_FWD(), pos = carrierWorld(4, 30, DECK_Y() + player.jet.len * 0.11, V3());
+  player.reset(pos, fwd, 0, playerType);
+  player.st.vel.set(0, 0, 0); player.st.thr = 0.6; player.onDeck = true; player.catT = 0; player.catReady = true;
+  setGear(player, true);
+  aimYaw = Math.atan2(fwd.x, fwd.z); aimPitch = 0.08; dirFromAngles(aimYaw, aimPitch, player.aimDir);
+  showWarn('推满油门（W），按 T 弹射起飞', true);
+}
+function catapultStep(ac, dt) {
+  const fwd = CARRIER_FWD();
+  if (!ac.catReady && !(ac.catT > 0)) return false;
+  // 挂在弹射器上：贴住甲板、机身摆正
+  ac.st.pos.y = DECK_Y() + ac.jet.len * 0.11;
+  ac.st.q.setFromUnitVectors(_d1.set(0, 0, 1), fwd); ac.st.w.set(0, 0, 0);
+  if (ac.catReady) { ac.st.vel.set(0, 0, 0); return true; }
+  if (ac.catT > 0) {
+    ac.catT -= dt;
+    const sp = Math.min(ac.st.vel.length() + 40 * dt, 95);
+    ac.st.vel.copy(fwd).multiplyScalar(sp);
+    const [, lz] = carrierLocal(ac.st.pos.x, ac.st.pos.z);
+    if (lz > 165 || ac.catT <= 0) {
+      ac.catT = undefined; ac.onDeck = false; ac.st.vel.y = 4;
+      if (ac === player) { aimPitch = 0.18; dirFromAngles(aimYaw, aimPitch, ac.aimDir); }   // 离舰自动抬头爬升
+    }
+    return true;
+  }
+  return false;
+}
+
+// ---------- 任务 ----------
+const MISSIONS = {
+  free:   { cn: '自由空战', desc: '无限敌机，随便打' },
+  timed:  { cn: '限时歼灭', desc: '4 分钟内击落 8 架', goal: 8, time: 240 },
+  escort: { cn: '护航轰炸机', desc: '护送 B-2 飞到 35 公里外的目标' },
+  defend: { cn: '保卫航母', desc: '挡住 4 波攻击机，别让航母沉了' },
+};
+let missionId = 'free', spawnMode = 'air', missionDirty = true;
+const M = { t: 0, result: null, wave: 0, waveT: 0, target: new THREE.Vector3(), bomber: null };
+const stats = { shots: 0, hits: 0, msl: 0, deaths: 0 };
+function clearWorld() {
+  for (let i = aircraft.length - 1; i >= 0; i--) { const ac = aircraft[i]; if (ac === player) continue; scene.remove(ac.mesh); disposeTree(ac.mesh); aircraft.splice(i, 1); }
+  for (const m of missiles) scene.remove(m.mesh);
+  missiles.length = 0; flares.length = 0; spawnQueue.length = 0;
+  for (const b of bullets) b.life = 0;
+}
+function startMission() {
+  clearWorld();
+  kills = 0; Object.assign(stats, { shots: 0, hits: 0, msl: 0, deaths: 0 });
+  Object.assign(M, { t: 0, result: null, wave: 0, waveT: 3, bomber: null });
+  CARRIER.hp = 100;
+  if (spawnMode === 'deck') spawnOnDeck(); else respawnPlayer(true);
+  const D = DIFF[difficulty];
+  if (missionId === 'free' || missionId === 'timed') for (let i = 0; i < D.count; i++) spawnEnemy();
+  if (missionId === 'escort') {
+    // B-2 从航母附近出发，向东北方 35 km 的岛飞
+    const from = carrierWorld(0, 600, 2500, V3()), dir = V3().set(0.6, 0, 0.8).normalize();
+    M.target.copy(from).addScaledVector(dir, 35000).setY(0);
+    const b = new Aircraft(false); b.reset(from, dir, 230, 'B-2');
+    b.friendly = true; b.scripted = true; for (const k in b.hp) b.hp[k] *= 6;
+    setGear(b, false); aircraft.push(b); M.bomber = b;
+  }
+  showMsg(MISSIONS[missionId].cn);
+  missionDirty = false;
+}
+function missionEvent(e) { if (e === 'landed' && spawnMode === 'deck') stats.landed = true; }
+function spawnWaveEnemy(prey, from) {
+  spawnEnemy(from);
+  const ac = aircraft[aircraft.length - 1];
+  ac.prey = prey;
+  if (prey === 'carrier') { ac.mode = 'strike'; }
+  return ac;
+}
+function updateMission(dt) {
+  if (M.result) return;
+  M.t += dt;
+  const D = DIFF[difficulty], enemies = aircraft.filter((a) => a !== player && !a.friendly && a.alive && !a.doomed);
+  if (missionId === 'timed') {
+    if (kills >= MISSIONS.timed.goal) endMission(true);
+    else if (M.t > MISSIONS.timed.time) endMission(false);
+  } else if (missionId === 'escort') {
+    const b = M.bomber;
+    if (!b.alive || b.doomed) endMission(false);
+    else if (b.st.pos.distanceTo(_m1.copy(M.target).setY(b.st.pos.y)) < 1500) { fxExplosion(_m1.copy(M.target).setY(groundH(M.target.x, M.target.z) + 5), ZERO, 3); endMission(true); }
+    else if ((M.waveT -= dt) <= 0 && enemies.length < D.count + 1) {
+      M.waveT = 22;
+      const n = 1 + Math.floor(D.count / 2);
+      for (let i = 0; i < n; i++) spawnWaveEnemy(Math.random() < 0.6 ? b : null, b.st.pos);
+    }
+  } else if (missionId === 'defend') {
+    if (CARRIER.hp <= 0) endMission(false);
+    else if (!enemies.length && (M.waveT -= dt) <= 0) {
+      if (M.wave >= 4) endMission(true);
+      else {
+        M.wave++; M.waveT = 6;
+        const n = 2 + M.wave + (difficulty === 'ace' ? 1 : 0);
+        for (let i = 0; i < n; i++) spawnWaveEnemy(Math.random() < 0.7 ? 'carrier' : null, CARRIER.pos);
+        showMsg(`第 ${M.wave} 波`);
+      }
+    }
+  }
+}
+const _m1 = V3();
+function endMission(win) {
+  M.result = win ? 'win' : 'lose';
+  const acc = stats.shots ? stats.hits / stats.shots : 0;
+  const stars = win ? 1 + (stats.deaths === 0 ? 1 : 0) + (acc > 0.15 ? 1 : 0) : 0;
+  $('rtitle').textContent = win ? '任务成功' : '任务失败';
+  $('rtitle').style.color = win ? '#ffd27a' : '#ff6a5a';
+  $('rstars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+  const extra = missionId === 'escort' ? `<tr><td>B-2 机体</td><td>${Math.max(0, Math.round(hpFrac(M.bomber) * 100))}%</td></tr>`
+    : missionId === 'defend' ? `<tr><td>航母剩余</td><td>${Math.max(0, Math.round(CARRIER.hp))}%</td></tr>` : '';
+  $('rstats').innerHTML = `<tr><td>任务</td><td>${MISSIONS[missionId].cn} · ${$('diff').querySelector('.sel').textContent}</td></tr>
+    <tr><td>用时</td><td>${Math.floor(M.t / 60)}:${String(Math.floor(M.t % 60)).padStart(2, '0')}</td></tr>
+    <tr><td>击落</td><td>${kills}</td></tr><tr><td>被击落</td><td>${stats.deaths}</td></tr>
+    <tr><td>机炮命中率</td><td>${(acc * 100).toFixed(1)}%（${stats.hits}/${stats.shots}）</td></tr>
+    <tr><td>导弹</td><td>${stats.msl} 枚</td></tr>${stats.landed ? '<tr><td>着舰</td><td>成功</td></tr>' : ''}${extra}`;
+  $('result').style.display = 'flex';
+  document.exitPointerLock();
+}
+function hpFrac(ac) { return Object.keys(HP0).reduce((a, k) => a + Math.max(0, ac.hp[k]) / (HP0[k] * (ac.friendly ? 6 : 1)), 0) / Object.keys(HP0).length; }
+function objectiveText() {
+  if (M.result) return '';
+  const tm = (s) => `${Math.floor(s / 60)}:${String(Math.max(0, Math.floor(s % 60))).padStart(2, '0')}`;
+  if (missionId === 'timed') return `击落 ${kills} / ${MISSIONS.timed.goal} · 剩余 ${tm(MISSIONS.timed.time - M.t)}`;
+  if (missionId === 'escort' && M.bomber) return `护送 B-2 · 距目标 ${(M.bomber.st.pos.distanceTo(_m1.copy(M.target).setY(M.bomber.st.pos.y)) / 1000).toFixed(1)} km · 机体 ${Math.max(0, Math.round(hpFrac(M.bomber) * 100))}%`;
+  if (missionId === 'defend') return `保卫航母 · 第 ${M.wave} / 4 波 · 航母 ${Math.max(0, Math.round(CARRIER.hp))}%`;
+  return '';
+}
+// B-2：按航线匀速飞，不参与空气动力计算；被打残后转为正常物理坠落
+function bomberStep(ac, dt) {
+  const st = ac.st, want = _m1.copy(M.target).setY(2500).sub(st.pos).normalize();
+  const cur = _d1.copy(st.vel).normalize().lerp(want, Math.min(1, dt * 0.05)).normalize();
+  st.vel.copy(cur).multiplyScalar(230); st.V = 230; st.thr = 0.85;
+  st.pos.addScaledVector(st.vel, dt);
+  ac.mesh.position.copy(st.pos); ac.mesh.lookAt(_d2.copy(st.pos).add(st.vel)); st.q.copy(ac.mesh.quaternion);
+}
+// 攻击机：低空直扑航母，进入 1.5 km 投弹后拉起脱离
+function strikeBrain(ac, dt) {
+  const st = ac.st;
+  if (ac.egressUntil && gameTime < ac.egressUntil) { ac.aimDir.copy(ac.modeDir); st.thr = 1; }
+  else {
+    const tgt = _m1.copy(CARRIER.pos).setY(350), d = Math.hypot(st.pos.x - CARRIER.pos.x, st.pos.z - CARRIER.pos.z);
+    ac.aimDir.subVectors(tgt, st.pos).normalize(); st.thr = 0.9;
+    if (d < 1500) {
+      CARRIER.hp -= DIFF[difficulty] === DIFF.rookie ? 7 : 10;
+      for (let k = 0; k < 3; k++) fxExplosion(carrierWorld(rand(-30, 30), rand(-140, 140), DECK_Y() + 3, V3()), ZERO, 0.8);
+      ac.egressUntil = gameTime + 14;
+      ac.modeDir.subVectors(st.pos, CARRIER.pos).setY(0).normalize().addScaledVector(UP, 0.3).normalize();
+    }
+  }
+  const agl = st.pos.y - groundH(st.pos.x, st.pos.z);
+  if (agl < 200) { ac.aimDir.y = Math.max(ac.aimDir.y, 0.3); ac.aimDir.normalize(); }
+  autopilot(ac);
+}
+
+// ---------- 雷达（机头朝上） ----------
+const radar = $('radar'), rctx = radar.getContext('2d');
+let radarRange = 12000;
+function drawRadar() {
+  const W = radar.width, R = W / 2 - 6, st = player.st, f = _d1.set(0, 0, 1).applyQuaternion(st.q);
+  const hdg = Math.atan2(f.x, f.z), k = R / radarRange, ch = Math.cos(hdg), sh = Math.sin(hdg);
+  const toR = (x, z) => { const dx = x - st.pos.x, dz = z - st.pos.z; const rx = -(dx * ch - dz * sh), rz = dx * sh + dz * ch; return [W / 2 + rx * k, W / 2 - rz * k]; };
+  rctx.clearRect(0, 0, W, W);
+  rctx.save(); rctx.beginPath(); rctx.arc(W / 2, W / 2, R, 0, 7); rctx.fillStyle = 'rgba(8,16,14,.55)'; rctx.fill(); rctx.clip();
+  rctx.strokeStyle = 'rgba(140,240,170,.25)'; rctx.lineWidth = 1;
+  for (const f2 of [0.33, 0.66, 1]) { rctx.beginPath(); rctx.arc(W / 2, W / 2, R * f2, 0, 7); rctx.stroke(); }
+  // 岛
+  rctx.fillStyle = 'rgba(120,150,110,.45)';
+  const cx0 = Math.floor(st.pos.x / CELL), cz0 = Math.floor(st.pos.z / CELL), kk = Math.ceil(radarRange / CELL) + 1;
+  for (let cx = cx0 - kk; cx <= cx0 + kk; cx++) for (let cz = cz0 - kk; cz <= cz0 + kk; cz++) for (const I of cellIslands(cx, cz)) {
+    const [x, y] = toR(I.x, I.z); rctx.beginPath(); rctx.arc(x, y, Math.max(1.5, I.r * 0.8 * k), 0, 7); rctx.fill();
+  }
+  // 航母 / 任务目标
+  if (CARRIER.mesh) { const [x, y] = toR(CARRIER.pos.x, CARRIER.pos.z); rctx.fillStyle = '#6fb7ff'; rctx.fillRect(x - 4, y - 4, 8, 8); }
+  if (missionId === 'escort' && !M.result) { const [x, y] = toR(M.target.x, M.target.z); rctx.strokeStyle = '#8ef0a8'; rctx.lineWidth = 2; rctx.beginPath(); rctx.moveTo(x - 5, y - 5); rctx.lineTo(x + 5, y + 5); rctx.moveTo(x + 5, y - 5); rctx.lineTo(x - 5, y + 5); rctx.stroke(); }
+  // 飞机：敌红友蓝，三角形指向航向
+  for (const ac of aircraft) {
+    if (ac === player || !ac.alive) continue;
+    const [x, y] = toR(ac.st.pos.x, ac.st.pos.z), af = _d2.set(0, 0, 1).applyQuaternion(ac.st.q), a = Math.atan2(af.x, af.z) - hdg;
+    rctx.save(); rctx.translate(x, y); rctx.rotate(-a + Math.PI); rctx.fillStyle = ac.friendly ? '#6fb7ff' : ac.doomed ? '#888' : '#ff5a4a';
+    rctx.beginPath(); rctx.moveTo(0, 6); rctx.lineTo(4, -4); rctx.lineTo(-4, -4); rctx.closePath(); rctx.fill(); rctx.restore();
+  }
+  for (const m of missiles) { const [x, y] = toR(m.pos.x, m.pos.z); rctx.fillStyle = m.target === player ? '#ff3020' : '#ffd27a'; rctx.fillRect(x - 1.5, y - 1.5, 3, 3); }
+  rctx.restore();
+  rctx.fillStyle = '#e8f4ea'; rctx.beginPath(); rctx.moveTo(W / 2, W / 2 - 7); rctx.lineTo(W / 2 + 5, W / 2 + 5); rctx.lineTo(W / 2 - 5, W / 2 + 5); rctx.closePath(); rctx.fill();
+  rctx.fillStyle = 'rgba(232,244,234,.7)'; rctx.font = '10px Menlo'; rctx.fillText(radarRange / 1000 + ' km', 8, W - 8);
+}
+
 player = new Aircraft(true);
 aircraft.push(player);
 let booted = false;
@@ -1685,7 +1996,7 @@ for (const id of JET_IDS) {
   hangarEl.appendChild(b);
 }
 for (const b of $('diff').children) b.addEventListener('click', () => {
-  difficulty = b.dataset.v;
+  difficulty = b.dataset.v; missionDirty = true;
   for (const x of $('diff').children) x.classList.toggle('sel', x === b);
   for (const ac of aircraft) if (ac !== player) ac.fm.maxG = ac.jet.g * DIFF[difficulty].gLim;
 });
@@ -1694,9 +2005,9 @@ markHangar();
 async function boot() {
   // 先加载玩家机和 3 种敌机，其余机型在后台慢慢加载
   const others = JET_IDS.filter((id) => id !== playerType).sort(() => Math.random() - 0.5);
-  await Promise.all([playerType, ...others.slice(0, 3)].map(loadJet));
-  respawnPlayer(true);
-  for (let i = 0; i < DIFF[difficulty].count; i++) spawnEnemy();
+  await Promise.all([playerType, ...others.slice(0, 3), 'CVN-78', 'B-2'].map(loadJet));
+  placeCarrier();
+  startMission();
   booted = true;
   const l = $('loading'); l.style.opacity = 0; setTimeout(() => l.remove(), 1000);
   /*SELFTEST*/
@@ -1706,6 +2017,7 @@ boot();
 const clock = new THREE.Clock();
 function stepWorld(dt) {
   gameTime += dt;
+  if (player.alive && player.landed && player.st.thr > 0.9) { player.landed = false; player.arrested = false; }   // 着舰后推满油门可以再滑跑
   if (player.alive) {
     if (keys.KeyW) player.st.thr = Math.min(1, player.st.thr + dt * 0.5);
     if (keys.KeyS) player.st.thr = Math.max(0, player.st.thr - dt * 0.5);
@@ -1715,7 +2027,8 @@ function stepWorld(dt) {
   for (const ac of aircraft) if (ac !== player && ac.alive) enemyBrain(ac, dt);
   for (const ac of aircraft) ac.prevVel.copy(ac.st.vel);
   const n = Math.ceil(dt / (1 / 120));
-  for (let i = 0; i < n; i++) for (const ac of aircraft) if (ac.alive) physicsStep(ac, dt / n);
+  for (let i = 0; i < n; i++) for (const ac of aircraft) if (ac.alive && !(ac.scripted && !ac.doomed)) physicsStep(ac, dt / n);
+  for (const ac of aircraft) if (ac.alive && ac.scripted && !ac.doomed) bomberStep(ac, dt);
   for (const ac of aircraft) ac.accEst.lerp(_a.subVectors(ac.st.vel, ac.prevVel).divideScalar(dt), 0.3);   // 平滑后的加速度，给提前量用
   for (const ac of aircraft) {
     if (!ac.alive) continue;
@@ -1726,9 +2039,9 @@ function stepWorld(dt) {
   }
   // 相撞
   if (player.alive) for (const ac of aircraft) {
-    if (ac === player || !ac.alive || ac.st.pos.distanceToSquared(player.st.pos) > (0.4 * (ac.jet.len + player.jet.len)) ** 2) continue;
+    if (ac === player || !ac.alive || ac.friendly || ac.st.pos.distanceToSquared(player.st.pos) > (0.4 * (ac.jet.len + player.jet.len)) ** 2) continue;
     ac.lastAttacker = player; explodeAir(ac); fxExplosion(player.st.pos, player.st.vel, 1);
-    player.alive = false; player.mesh.visible = false; showWarn('相撞坠毁 · 按 R 重新起飞', true);
+    player.alive = false; player.mesh.visible = false; stats.deaths++; showWarn('相撞坠毁 · 按 R 重新起飞', true);
   }
   updateBullets(dt);
   updateDebris(dt);
@@ -1738,10 +2051,12 @@ function stepWorld(dt) {
   for (let i = aircraft.length - 1; i >= 0; i--) {
     const ac = aircraft[i];
     if (ac === player || ac.alive) continue;
+    if (ac === M.bomber) continue;
     scene.remove(ac.mesh); disposeTree(ac.mesh); aircraft.splice(i, 1);
-    spawnQueue.push(gameTime + 6);
+    if (missionId === 'free' || missionId === 'timed') spawnQueue.push(gameTime + 6);
   }
-  if (aircraft.length - 1 + spawnQueue.length < DIFF[difficulty].count) spawnQueue.push(gameTime + 3);
+  if ((missionId === 'free' || missionId === 'timed') && aircraft.length - 1 + spawnQueue.length < DIFF[difficulty].count) spawnQueue.push(gameTime + 3);
+  updateMission(dt);
   while (spawnQueue.length && spawnQueue[0] <= gameTime) { spawnQueue.shift(); spawnEnemy(); }
   flash.intensity *= Math.exp(-dt * 9);
 }
@@ -1756,7 +2071,7 @@ renderer.setAnimationLoop(() => {
   tickIslands(camera.position);
   water.material.uniforms.time.value += dt * 0.8;
   composer.render();
-  if (booted) { updateHUD(dt); updateAudio(); }
+  if (booted) { updateHUD(dt); updateAudio(); drawRadar(); $('obj').textContent = objectiveText(); }
 });
 </script>
 </body>

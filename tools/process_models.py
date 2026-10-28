@@ -34,12 +34,14 @@ for name in sorted(os.listdir(root)):
         omn, omx = bounds([o]); mats = ' '.join(m.name.lower() for m in o.data.materials if m)
         gear = omn.z < mn.z - 0.03 * L                       # 伸到机腹以下的：起落架
         light = 'light' in mats and len(o.data.polygons) < 100   # 着陆灯小面片
-        if gear or light: removed.append(o.name); bpy.data.objects.remove(o)
+        if light: removed.append(o.name); bpy.data.objects.remove(o)
+        elif gear: removed.append(o.name); o.name = 'GEAR_' + o.name   # 起落架保留成可开关的部件
     meshes = [o for o in bpy.data.objects if o.type == 'MESH']
-    mn, mx = bounds(meshes)
+    body = [o for o in meshes if not o.name.startswith('GEAR_')]
+    mn, mx = bounds(body)
     longX = (mx.x - mn.x) >= (mx.y - mn.y)
     # 机头方向：机身长轴上，座舱（玻璃）所在的一端
-    glass = [o for o in meshes if any(m and 'glass' in m.name.lower() for m in o.data.materials) and len(o.data.polygons) > 50]
+    glass = [o for o in body if any(m and 'glass' in m.name.lower() for m in o.data.materials) and len(o.data.polygons) > 50]
     ax = 0 if longX else 1
     c = (mn + mx) / 2
     if glass:
@@ -57,7 +59,7 @@ for name in sorted(os.listdir(root)):
     R = mathutils.Matrix.Rotation(math.radians(FIX), 4, 'Z')
     for o in meshes: o.data.transform(R); o.data.update()
     bpy.context.view_layer.update()
-    mn, mx = bounds(meshes); k = LENGTH[name] / (mx.y - mn.y); c = (mn + mx) / 2
+    mn, mx = bounds(body); k = LENGTH[name] / (mx.y - mn.y); c = (mn + mx) / 2
     S = mathutils.Matrix.Scale(k, 4) @ mathutils.Matrix.Translation(-c)
     for o in meshes: o.data.transform(S); o.data.update()
     bpy.context.view_layer.update()
