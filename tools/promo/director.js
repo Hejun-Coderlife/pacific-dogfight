@@ -224,10 +224,11 @@
     look(A.st.pos.clone().addScaledVector(dir, -48 + 3 * t).addScaledVector(side, -16).add(V3().set(0, -7, 0)), A.st.pos.clone().addScaledVector(dir, 600).add(V3().set(0, 260, 0)));
   });
   // 10 夜晚：镜头望向月亮，两架战机拖着加力火焰从月下掠过，海面上是月光带
-  let NC, ND;
+  let NC, ND, NW;
   shot(5, () => {
-    clearAll(); applyWeather('night'); A = mk('F-22', true); B = mk('Su-57'); fov(44);
-    const md = moonDir().clone().setY(0).normalize();
+    NW = window.__NIGHTW || 'night';
+    clearAll(); applyWeather(NW); A = mk('F-22', true); B = mk('Su-57'); fov(NW === 'starry' ? 56 : NW === 'dream' ? 64 : 44);
+    const md = NW === 'starry' ? V3().set(0.908, 0, -0.418) : NW === 'bluehour' || NW === 'dream' ? V3().set(Math.sin(4 / 57.3), 0, Math.cos(4 / 57.3)) : moonDir().clone().setY(0).normalize();
     NC = V3().set(9000, 45, -3000); ND = md;
   }, (t) => {
     const side = V3().crossVectors(ND, UP).normalize();   // 从左往右横穿画面
@@ -235,7 +236,7 @@
     const pathA = (u) => base.clone().addScaledVector(side, -330 + 150 * u).add(V3().set(0, 70 + 6 * u, 0));
     const pathB = (u) => base.clone().addScaledVector(ND, 30).addScaledVector(side, -365 + 150 * u).add(V3().set(0, 58 + 6 * u, 0));
     fly(A, pathA, t, 1); fly(B, pathB, t, 1);
-    look(NC, NC.clone().addScaledVector(ND, 500).addScaledVector(side, 40 * (t - 2.2)).add(V3().set(0, 190, 0)));
+    look(NC, NC.clone().addScaledVector(ND, 500).addScaledVector(side, 40 * (t - 2.2)).add(V3().set(0, NW === 'dream' ? 330 : 190, 0)));
     if (Math.abs(t - 1.6) < DT / 2) ev('flyby', 1.0, A.st.pos, 0.9);
   });
   // 11 蓝天里拉起远去（片尾）
