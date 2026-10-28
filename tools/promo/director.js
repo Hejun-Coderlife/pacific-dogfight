@@ -226,7 +226,7 @@
   // 10 夜晚：镜头望向月亮，两架战机拖着加力火焰从月下掠过，海面上是月光带
   let NC, ND, NW;
   shot(5, () => {
-    NW = window.__NIGHTW || 'night';
+    NW = window.__NIGHTW || 'dream';   // 夜景这一镜用星河暮光
     clearAll(); applyWeather(NW); A = mk('F-22', true); B = mk('Su-57'); fov(NW === 'starry' ? 56 : NW === 'dream' ? 64 : 44);
     const md = NW === 'starry' ? V3().set(0.908, 0, -0.418) : NW === 'bluehour' || NW === 'dream' ? V3().set(Math.sin(4 / 57.3), 0, Math.cos(4 / 57.3)) : moonDir().clone().setY(0).normalize();
     NC = V3().set(9000, 45, -3000); ND = md;
