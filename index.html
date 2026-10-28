@@ -19,6 +19,7 @@
   #nose::after { width: 2px; height: 22px; margin: -11px 0 0 -1px; }
   .tape { position: absolute; top: 50%; transform: translateY(-50%); font-size: 26px; text-align: center; }
   .tape small { display: block; font-size: 11px; opacity: .7; margin-bottom: 6px; font-weight: 400; }
+  .tape small.mach { margin: 6px 0 0; font-size: 13px; opacity: .85; }
   #lt { left: 22%; } #rt { right: 22%; }
   #bt { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); font-size: 13px; opacity: .9; }
   #warn { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); font-size: 28px; color: #ff6a5a;
@@ -63,7 +64,7 @@
 <div id="loading">LOADING · 加载机型</div>
 <div id="hud">
   <div id="aim"></div><div id="nose"></div>
-  <div id="lt" class="tape"><small>速度 km/h</small><span id="spd">0</span></div>
+  <div id="lt" class="tape"><small>速度 km/h</small><span id="spd">0</span><small id="mach" class="mach">M 0.00</small></div>
   <div id="rt" class="tape"><small>高度 m</small><span id="alt">0</span></div>
   <div id="bt">油门 <span id="thr">0</span>% · <span id="gl">1.0</span> G · 航向 <span id="hdg">000</span>° · 导弹 <span id="msl">2</span>/2</div>
   <div id="lead"></div><div id="kills">击落 <span id="kn">0</span></div><div id="msg"></div>
@@ -562,7 +563,7 @@ function groundH(x, z) {
 
 // ---------- 通用 ----------
 const V3 = () => new THREE.Vector3();
-const UP = new THREE.Vector3(0, 1, 0);
+const UP = new THREE.Vector3(0, 1, 0), _xAxis = new THREE.Vector3(1, 0, 0);
 const clamp1 = (v) => THREE.MathUtils.clamp(v, -1, 1);
 const rand = (a, b) => a + Math.random() * (b - a);
 const _qInv = new THREE.Quaternion(), _dq = new THREE.Quaternion();
@@ -698,18 +699,19 @@ function fxBulletSplash(p, dust) {
 
 // ---------- 机型（真实尺寸；性能是按公开数据简化的游戏值） ----------
 // len/span 米，mass 千克，S 翼面积 m²，T 含加力最大推力 N，nx 双发喷口横向半距，g 最大过载，aStall 失速迎角，roll 最大滚转率 rad/s
+// vSL/vAlt：海平面 / 11 公里高空的公开极速 km/h（高空值 = 公开马赫数 × 当地音速）
 const JETS = {
-  'F-22':   { cn: 'F-22 猛禽',    len: 18.9, span: 13.5, mass: 29000, S: 78,   T: 312000, nx: 0.8,  g: 9,   aStall: 0.48, roll: 4.0 },
-  'Su-57':  { cn: 'Su-57',        len: 20.1, span: 14.5, mass: 29000, S: 79,   T: 294000, nx: 1.15, g: 9,   aStall: 0.52, roll: 4.0 },
-  'F-35':   { cn: 'F-35 闪电II',  len: 15.7, span: 13.1, mass: 22000, S: 43,   T: 191000, nx: 0,    g: 9,   aStall: 0.45, roll: 3.6 },
-  'F-15E':  { cn: 'F-15E 攻击鹰', len: 19.4, span: 13.1, mass: 30000, S: 56.5, T: 258000, nx: 0.75, g: 9,   aStall: 0.42, roll: 3.6 },
-  'F-16':   { cn: 'F-16 战隼',    len: 15.0, span: 9.3,  mass: 12000, S: 27.9, T: 129000, nx: 0,    g: 9,   aStall: 0.42, roll: 4.6 },
-  'FA-18F': { cn: 'F/A-18F 超级大黄蜂', len: 18.3, span: 13.1, mass: 21000, S: 46.5, T: 196000, nx: 0.6, g: 7.5, aStall: 0.55, roll: 3.6 },
-  'F-14':   { cn: 'F-14 雄猫',    len: 19.1, span: 19.5, mass: 27000, S: 52.5, T: 250000, nx: 1.3,  g: 7.5, aStall: 0.42, roll: 3.0 },
-  'MiG-29': { cn: 'MiG-29',       len: 17.3, span: 11.1, mass: 15000, S: 38,   T: 162000, nx: 1.1,  g: 9,   aStall: 0.45, roll: 4.0 },
-  'MiG-35': { cn: 'MiG-35',       len: 17.3, span: 11.8, mass: 17000, S: 38,   T: 176000, nx: 1.1,  g: 9,   aStall: 0.5,  roll: 4.2 },
-  'Rafale': { cn: '阵风',         len: 15.3, span: 10.5, mass: 14000, S: 45.7, T: 150000, nx: 0.55, g: 9,   aStall: 0.48, roll: 4.4 },
-  'F-117':  { cn: 'F-117 夜鹰',   len: 20.1, span: 12.9, mass: 18000, S: 84,   T: 150000, nx: 1.3,  g: 7,   aStall: 0.38, roll: 3.0, noAB: true },
+  'F-22':   { cn: 'F-22 猛禽',    len: 18.9, span: 13.5, mass: 29000, S: 78,   T: 312000, nx: 0.8,  g: 9,   aStall: 0.48, roll: 4.0 , vSL: 1480, vAlt: 2390 },
+  'Su-57':  { cn: 'Su-57',        len: 20.1, span: 14.5, mass: 29000, S: 79,   T: 294000, nx: 1.15, g: 9,   aStall: 0.52, roll: 4.0 , vSL: 1400, vAlt: 2124 },
+  'F-35':   { cn: 'F-35 闪电II',  len: 15.7, span: 13.1, mass: 22000, S: 43,   T: 191000, nx: 0,    g: 9,   aStall: 0.45, roll: 3.6 , vSL: 1300, vAlt: 1700 },
+  'F-15E':  { cn: 'F-15E 攻击鹰', len: 19.4, span: 13.1, mass: 30000, S: 56.5, T: 258000, nx: 0.75, g: 9,   aStall: 0.42, roll: 3.6 , vSL: 1480, vAlt: 2655 },
+  'F-16':   { cn: 'F-16 战隼',    len: 15.0, span: 9.3,  mass: 12000, S: 27.9, T: 129000, nx: 0,    g: 9,   aStall: 0.42, roll: 4.6 , vSL: 1470, vAlt: 2177 },
+  'FA-18F': { cn: 'F/A-18F 超级大黄蜂', len: 18.3, span: 13.1, mass: 21000, S: 46.5, T: 196000, nx: 0.6, g: 7.5, aStall: 0.55, roll: 3.6 , vSL: 1300, vAlt: 1912 },
+  'F-14':   { cn: 'F-14 雄猫',    len: 19.1, span: 19.5, mass: 27000, S: 52.5, T: 250000, nx: 1.3,  g: 7.5, aStall: 0.42, roll: 3.0 , vSL: 1470, vAlt: 2485 },
+  'MiG-29': { cn: 'MiG-29',       len: 17.3, span: 11.1, mass: 15000, S: 38,   T: 162000, nx: 1.1,  g: 9,   aStall: 0.45, roll: 4.0 , vSL: 1500, vAlt: 2390 },
+  'MiG-35': { cn: 'MiG-35',       len: 17.3, span: 11.8, mass: 17000, S: 38,   T: 176000, nx: 1.1,  g: 9,   aStall: 0.5,  roll: 4.2 , vSL: 1500, vAlt: 2368 },
+  'Rafale': { cn: '阵风',         len: 15.3, span: 10.5, mass: 14000, S: 45.7, T: 150000, nx: 0.55, g: 9,   aStall: 0.48, roll: 4.4 , vSL: 1390, vAlt: 1912 },
+  'F-117':  { cn: 'F-117 夜鹰',   len: 20.1, span: 12.9, mass: 18000, S: 84,   T: 150000, nx: 1.3,  g: 7,   aStall: 0.38, roll: 3.0, noAB: true , vSL: 1040, vAlt: 980 },
 };
 const JET_IDS = Object.keys(JETS);
 const jetGLTF = {}, jetLoading = {};
@@ -828,7 +830,9 @@ function physicsStep(ac, dt) {
   const vl = _a.copy(st.vel).applyQuaternion(_qInv);
   const alpha = Math.atan2(-vl.y, Math.max(vl.z, 1));
   const beta = Math.atan2(vl.x, Math.max(vl.z, 1));
-  const qd = 0.5 * RHO * V * V, aa = Math.abs(alpha);
+  // 大气：密度按高度指数衰减（11 km 约为海平面 30%），音速 340→295 m/s
+  const h = Math.max(st.pos.y, 0), sigma = Math.exp(-h / 9000);
+  const qd = 0.5 * RHO * sigma * V * V, aa = Math.abs(alpha);
   const stalled = aa > ac.fm.aStall;
   // 损伤：断翼少升力且不对称，断尾失去稳定，发动机坏了没推力
   const liftL = ac.lost.wingL ? 0 : ac.hp.wingL < HP0.wingL / 2 ? 0.8 : 1;
@@ -836,18 +840,20 @@ function physicsStep(ac, dt) {
   const nLost = ac.lost.wingL + ac.lost.wingR + ac.lost.tail;
   const thrustMul = ac.engineDead ? 0 : ac.hp.engine < HP0.engine / 2 ? 0.6 : 1;
   const CL = (stalled ? Math.sign(alpha) * ac.fm.CLa * ac.fm.aStall * Math.max(0.45, 1 - (aa - ac.fm.aStall) * 2.2) : ac.fm.CLa * alpha) * (liftL + liftR) / 2;
-  const mach = V / 340;
-  const CD = ac.fm.CD0 + ac.fm.K * CL * CL + (stalled ? 0.35 * (aa - ac.fm.aStall) : 0) + 0.3 * beta * beta + nLost * 0.025
-    + 0.04 * smoothstep(0.85, 1.1, mach);   // 跨音速波阻
-  // 油门 85% 以上进加力：军推约为最大推力的 65%
-  const thr = st.thr <= 0.85 || ac.jet.noAB ? Math.min(st.thr, 0.85) / 0.85 * 0.65 : 0.65 + (st.thr - 0.85) / 0.15 * 0.35;
-  const thrust = thr * thrustMul * ac.fm.Tmax * (ac.jet.noAB ? 1.4 : 1);
+  const CD = ac.fm.K * CL * CL + (stalled ? 0.35 * (aa - ac.fm.aStall) : 0) + 0.3 * beta * beta + nLost * 0.025;
+  // 推力随空气变稀而下降；油门 85% 以上进加力，军推约为最大推力的 60%
+  const Tfull = ac.fm.Tmax * (ac.jet.noAB ? 1.4 : 1) * Math.pow(sigma, 0.7);
+  const thr = ac.jet.noAB ? st.thr : st.thr <= 0.85 ? st.thr / 0.85 * 0.6 : 0.6 + (st.thr - 0.85) / 0.15 * 0.4;
+  const thrust = thr * thrustMul * Tfull;
+  // 废阻 + 波阻按真实极速标定：满推力时恰好在该高度的公开极速处平衡（低速段 ∝ V²，接近极速时急剧上升）
+  const vmax = THREE.MathUtils.lerp(ac.jet.vSL, ac.jet.vAlt, Math.min(h / 11000, 1)) / 3.6, x = V / vmax;
+  const dragPar = Tfull * 0.95 * (0.5 * x * x + 0.5 * x ** 8);
 
   const vhat = _b.copy(st.vel).divideScalar(V);
   const upW = _c.set(0, 1, 0).applyQuaternion(st.q);
   const liftDir = _d.copy(upW).addScaledVector(vhat, -upW.dot(vhat)).normalize();
   _F.copy(liftDir).multiplyScalar(qd * ac.fm.S * CL);
-  _F.addScaledVector(vhat, -qd * ac.fm.S * CD);
+  _F.addScaledVector(vhat, -(qd * ac.fm.S * CD + dragPar));
   _F.addScaledVector(_a.set(0, 0, 1).applyQuaternion(st.q), thrust);
   _F.addScaledVector(_a.set(1, 0, 0).applyQuaternion(st.q), -qd * ac.fm.S * 0.35 * beta);
   st.g = _F.dot(upW) / (ac.fm.mass * 9.81);
@@ -873,7 +879,7 @@ function physicsStep(ac, dt) {
   const wl = st.w.length();
   if (wl > 1e-6) { _dq.setFromAxisAngle(_a.copy(st.w).divideScalar(wl), wl * dt); st.q.multiply(_dq).normalize(); }
 
-  st.alpha = alpha; st.V = V; st.stalled = stalled; st.qd = qd; st.aMax = aMax;
+  st.alpha = alpha; st.V = V; st.mach = V / Math.max(295, 340 - 0.0041 * h); st.stalled = stalled; st.qd = qd; st.aMax = aMax;
   if (st.pos.y < groundH(st.pos.x, st.pos.z) + 1.5) hitGround(ac);
 }
 
@@ -882,17 +888,22 @@ const keys = {};
 function autopilot(ac) {
   const st = ac.st, ctrl = ac.ctrl;
   _qInv.copy(st.q).invert();
-  const d = _a.copy(ac.aimDir).applyQuaternion(_qInv);
+  // 以炮线为基准（机头下倾 GUN_DOWN）计算准星偏差
+  const d = _a.copy(ac.aimDir).applyQuaternion(_qInv).applyAxisAngle(_xAxis, -GUN_DOWN);
   const off = Math.acos(THREE.MathUtils.clamp(d.z, -1, 1));
   const upB = _b.set(0, 1, 0).applyQuaternion(_qInv);
   const bank = Math.atan2(upB.x, upB.y);
-  const wT = smoothstep(0.03, 0.22, off);
   const push = d.y < 0 && off < 0.8;   // 目标在下方且偏得不多时直接推杆，不翻成倒飞
-  const rollTarget = Math.atan2(-d.x, push ? -d.y : d.y) * wT - bank * (1 - wT);
-  ctrl.roll = clamp1(rollTarget * 2.2 - st.w.z * 0.25);
+  // 目标坡度 = 把准星转到炮线"上方"所需的坡度，但上限随偏差缩小（偏 1° 最多压 20°），小修正时不会来回摇翅膀
+  const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+  const maxBank = Math.min(Math.PI, off * 20 + 0.02);
+  const wantBank = THREE.MathUtils.clamp(wrap(bank + Math.atan2(-d.x, push ? -d.y : d.y)), -maxBank, maxBank);
+  const rollTarget = wrap(wantBank - bank);
+  ctrl.roll = clamp1(rollTarget * 3 - st.w.z * 0.7);
   const aFF = ac.fm.mass * 9.81 * Math.max(0, upB.y) / Math.max(st.qd * ac.fm.S * ac.fm.CLa, 1);
-  ctrl.pitch = clamp1((Math.atan2(d.y, d.z) + st.alpha) * 5 + st.w.x * 0.4 + aFF / st.aMax);
-  ctrl.yaw = clamp1(Math.atan2(-d.x, d.z) * 4);
+  // 让炮线对准准星：准星压在哪，炮弹就打到哪（GUN_DOWN 补偿炮线下倾）
+  ctrl.pitch = clamp1(Math.atan2(d.y, d.z) * 10 + st.w.x * 0.4 + aFF / st.aMax);
+  ctrl.yaw = clamp1(Math.atan2(-d.x, d.z) * 8);
   if (!ac.isPlayer) return;
   if (keys.KeyA) ctrl.roll = -1; if (keys.KeyD) ctrl.roll = 1;
   if (keys.ArrowUp) ctrl.pitch = 1; if (keys.ArrowDown) ctrl.pitch = -1;
@@ -1088,7 +1099,12 @@ scene.add(tracers);
 function volley(ac) {
   const mp = ac.mesh.localToWorld(_pp.copy(ac.gun));
   const dir = _vv.set(-ac.gun.x, -600 * GUN_DOWN - ac.gun.y, 600 - ac.gun.z).normalize().applyQuaternion(ac.st.q);   // 600 米交汇
-  dir.add(rr(0.002)).normalize();
+  // 瞄准辅助：炮线离提前量点 5° 以内时，弹道自动修正过去
+  if (ac === player && leadAim.ok) {
+    const want = _c.subVectors(leadAim.p, mp).normalize();
+    if (want.dot(dir) > Math.cos(0.09)) dir.copy(want);
+  }
+  dir.add(rr(0.0015)).normalize();
   const b = bullets[bHead]; bHead = (bHead + 1) % MAXB;
   b.p.copy(mp); b.v.copy(ac.st.vel).addScaledVector(dir, GUN_V); b.life = 3; b.owner = ac;
   b.tracer = (ac.tracerN++ % 3) === 0;
@@ -1167,6 +1183,7 @@ function mountMissiles(ac) {
   ac.nextSlot = 0;
 }
 const missiles = [];
+const leadAim = { ok: false, p: new THREE.Vector3() };
 const lock = { target: null, t: 0 };
 function updateLock(dt) {
   if (!player.alive) { lock.target = null; lock.t = 0; return; }
@@ -1323,6 +1340,8 @@ function updateCamera(dt) {
   cam.offset.lerp(target, 1 - Math.exp(-dt * 10));
   camera.position.copy(player.st.pos).add(cam.offset);
   camera.lookAt(_c.copy(player.st.pos).addScaledVector(look, 120).addScaledVector(UP, cam.dist * 0.15));
+  const fov = 50 + 16 * smoothstep(150, 650, player.st.V);   // 越快视野越广，增强速度感
+  if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
 }
 
 // ---------- HUD ----------
@@ -1350,6 +1369,7 @@ function updateHUD(dt) {
   place(hud.nose, _a.set(0, -GUN_DOWN, 1).normalize().applyQuaternion(st.q).multiplyScalar(1500).add(st.pos));
   hud.nose.classList.toggle('hit', (hitT -= dt) > 0);
   hud.spd.textContent = Math.round(st.V * 3.6);
+  $('mach').textContent = 'M ' + (st.mach || 0).toFixed(2);
   hud.alt.textContent = Math.round(st.pos.y);
   hud.thr.textContent = Math.round(st.thr * 100);
   hud.gl.textContent = st.g.toFixed(1);
@@ -1388,7 +1408,8 @@ function updateHUD(dt) {
       t = lp.distanceTo(st.pos) / GUN_V;
     }
     place(hud.lead, lp);
-  } else hud.lead.style.opacity = 0;
+    leadAim.ok = true; leadAim.p.copy(lp);
+  } else { hud.lead.style.opacity = 0; leadAim.ok = false; }
 
   if (warnSticky) return;
   const agl = st.pos.y - groundH(st.pos.x, st.pos.z);
