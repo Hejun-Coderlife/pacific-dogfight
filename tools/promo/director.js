@@ -26,6 +26,7 @@
     for (const m of missiles) scene.remove(m.mesh);
     missiles.length = 0; flares.length = 0; for (const b of bullets) b.life = 0;
     for (const d of debris) scene.remove(d.obj); debris.length = 0;
+    smokeFx.clear(); glowFx.clear();   // 上个镜头的烟和火光不能留到下个镜头
     M.bomber = null;
   }
   function mk(type, isPlayer = false) {
@@ -78,6 +79,7 @@
     water.position.x = camera.position.x; water.position.z = camera.position.z;
     cloudMat.uniforms.uCam.value.copy(camera.position); sky.position.copy(camera.position);
     tickIslands(camera.position); tickIslands(camera.position); tickIslands(camera.position); tickIslands(camera.position);
+    aimShadow(player.st.pos);
     updateWeather(dt);
     water.material.uniforms.time.value += dt * 0.8;
     composer.render();
