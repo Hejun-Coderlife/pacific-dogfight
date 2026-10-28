@@ -47,7 +47,7 @@ const wav = await evaluate('renderAudio()', true);
 fs.writeFileSync(path.join(work, 'audio.wav'), Buffer.from(wav, 'base64'));
 chrome.kill();
 // 文字卡：用网页排版（Avenir Next 细体、宽字距）截成透明 PNG，再叠到视频上
-const cards = [['title', 0.6, 4.8], ['0', 9.4, 13.6], ['1', 14.3, 17.7], ['2', 18.6, 30.4], ['3', 35.4, 39.6], ['4', 40.4, 50.4], ['end', 51.6, len + 1]];
+const cards = [['title', 0.6, 4.8], ['0', 9.4, 13.6], ['1', 14.3, 17.7], ['2', 18.6, 24.6], ['3', 25.4, 28.6], ['4', 29.4, 34.6], ['5', 39.4, 43.6], ['6', 44.4, 54.4], ['end', 55.6, len + 1]];
 const chrome2 = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', `--remote-debugging-port=${port + 1}`, '--window-size=1920,1080', `--user-data-dir=${work}/profile2`, 'about:blank']);
 for (let k = 0; k < 40; k++) { try { await fetch(`http://127.0.0.1:${port + 1}/json`); break; } catch { await new Promise((r) => setTimeout(r, 500)); } }
 const ws2 = new WebSocket((await (await fetch(`http://127.0.0.1:${port + 1}/json`)).json()).find((t) => t.type === 'page').webSocketDebuggerUrl);

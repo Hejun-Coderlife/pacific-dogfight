@@ -107,10 +107,10 @@
     <div id="hangar"></div>
     <div class="opts">任务 <span id="mis"><button data-v="free" class="sel">自由空战</button><button data-v="timed">限时歼灭</button><button data-v="escort">护航轰炸机</button><button data-v="defend">保卫航母</button></span></div>
     <div class="opts">起飞 <span id="spm"><button data-v="air" class="sel">空中出发</button><button data-v="deck">航母弹射</button></span></div>
-    <div class="opts">天气 <span id="wx"><button data-v="clear">晴天</button><button data-v="dusk" class="sel">黄昏</button><button data-v="noon">正午</button><button data-v="overcast">阴天</button><button data-v="storm">暴风雨</button><button data-v="night">夜晚</button></span></div>
+    <div class="opts">天气 <span id="wx"><button data-v="clear" class="sel">晴天</button><button data-v="dusk">黄昏</button><button data-v="noon">正午</button><button data-v="overcast">阴天</button><button data-v="storm">暴风雨</button><button data-v="night">夜晚</button></span></div>
     <div class="opts">难度 <span id="diff"><button data-v="rookie">新兵</button><button data-v="vet" class="sel">老手</button><button data-v="ace">王牌</button></span></div>
     <p class="go">选好机型，点击空白处开始</p>
-    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · G 起落架 · T 弹射 · M 雷达量程 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头（含座舱） · R 重新起飞 · Esc 暂停</p>
+    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · G 起落架 · T 弹射 · M 雷达量程 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>V 座舱视角（看仪表盘）· 滚轮 追尾远近 · 按住 C 自由看 · R 重新起飞 · Esc 暂停</p>
   </div>
 </div>
 <div id="result"><div class="card">
@@ -131,6 +131,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ---------- 参数 ----------
@@ -299,11 +300,30 @@ function islandH(I, x, z) {
 
 const C = (hex) => new THREE.Color(hex);
 const PAL = {
-  wetSand: C(0x8f8160), sand: C(0xd6c69c), jungleA: C(0x1f3d17), jungleB: C(0x34561f),
-  grass: C(0x5c6b30), rock: C(0x5a524a), darkRock: C(0x332e2b),
+  wetSand: C(0x8a7a58), sand: C(0xe6d6aa), jungleA: C(0x1b3a14), jungleB: C(0x2f5a1c), jungleC: C(0x47702a),
+  grass: C(0x6f7d38), rock: C(0x6a6056), rockB: C(0x4a4440), darkRock: C(0x2e2a28),
   deep: C(0x0f6f7a), shallow: C(0x6fe0cf), foam: C(0xf4f7f5),
 };
-const vegGeo = new THREE.IcosahedronGeometry(1, 0), vegMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true });
+const _rc = new THREE.Color();
+const vegGeo = new THREE.IcosahedronGeometry(1, 0), vegMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0 });
+// 地表细节纹理（可平铺）：细颗粒 + 斑驳，兼作凹凸贴图；按世界坐标贴，近看不糊
+const terrainDetail = (() => {
+  const N = 512, P0 = 32, cv = document.createElement('canvas'); cv.width = cv.height = N;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(N, N);
+  const tn = (x, y, s, P) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const H = (a, b) => hash2(((a % P) + P) % P, ((b % P) + P) % P, s);
+    return H(xi, yi) + (H(xi + 1, yi) - H(xi, yi)) * u + (H(xi, yi + 1) - H(xi, yi)) * v + (H(xi, yi) - H(xi + 1, yi) - H(xi, yi + 1) + H(xi + 1, yi + 1)) * u * v; };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let v = 0, a = 0.5;
+    for (let o = 0, f = 1; o < 6; o++, f *= 2, a *= 0.5) v += a * tn(x / N * P0 * f / 4, y / N * P0 * f / 4, 31 + o, P0 * f / 4);
+    const g = Math.min(255, Math.max(0, (0.62 + 0.55 * (v - 0.5) + 0.25) * 255));
+    const i = (y * N + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = g; img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0, map: terrainDetail, bumpMap: terrainDetail, bumpScale: 3 });
 function buildIsland(I) {
   const size = I.r * 2.7, seg = Math.round(Math.min(200, 70 + I.r / 20)), objs = [];
   const g = new THREE.PlaneGeometry(size, size, seg, seg); g.rotateX(-Math.PI / 2);
@@ -313,17 +333,20 @@ function buildIsland(I) {
   const nor = g.attributes.normal, cols = new Float32Array(n * 3), c = new THREE.Color();
   for (let i = 0; i < n; i++) {
     const h = H[i], x = pos.getX(i) + I.x, z = pos.getZ(i) + I.z, slope = 1 - nor.getY(i);
-    const t = fbm(x * 0.004, z * 0.004, I.seed + 3, 3);
-    c.copy(PAL.jungleA).lerp(PAL.jungleB, t);
-    c.lerp(PAL.grass, smoothstep(I.peak * 0.55, I.peak * 0.85, h) * 0.8);
-    c.lerp(PAL.rock, smoothstep(0.28, 0.5, slope));
+    const t = fbm(x * 0.004, z * 0.004, I.seed + 3, 3), t2 = fbm(x * 0.02, z * 0.02, I.seed + 5, 3);
+    c.copy(PAL.jungleA).lerp(PAL.jungleB, t).lerp(PAL.jungleC, smoothstep(0.55, 0.85, t2) * 0.6);   // 雨林：深浅不一的斑块
+    c.lerp(PAL.grass, smoothstep(I.peak * 0.5, I.peak * 0.85, h) * 0.75);                          // 高处草坡
+    const strata = 0.5 + 0.5 * Math.sin(h * 0.09 + t2 * 4);                                         // 岩壁上的层理
+    c.lerp(_rc.copy(PAL.rock).lerp(PAL.rockB, strata), smoothstep(0.26, 0.48, slope));
     c.lerp(PAL.darkRock, smoothstep(I.peak * 0.85, I.peak * 1.05, h));
-    c.lerp(PAL.sand, 1 - smoothstep(3, 9, h));
+    c.lerp(PAL.sand, 1 - smoothstep(3, 10, h));
     c.lerp(PAL.wetSand, 1 - smoothstep(0, 1.6, h));
+    c.multiplyScalar(1.18);   // 细节贴图平均会压暗一些，这里补回来
     cols.set([c.r, c.g, c.b], i * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+  { const uv = g.attributes.uv; for (let i = 0; i < n; i++) uv.setXY(i, (pos.getX(i) + I.x) / 38, (pos.getZ(i) + I.z) / 38); }   // 细节贴图按世界坐标平铺
+  const mesh = new THREE.Mesh(g, terrainMat);
   mesh.position.set(I.x, 0, I.z);
   scene.add(mesh); objs.push(mesh);
 
@@ -344,14 +367,14 @@ function buildIsland(I) {
   scene.add(shallow); objs.push(shallow);
 
   // 树冠
-  const rnd = mulberry32(I.seed * 99), tries = Math.round(Math.min(I.r, 2600) ** 2 / 380), veg = [];
+  const rnd = mulberry32(I.seed * 99), tries = Math.round(Math.min(I.r, 2600) ** 2 / 240), veg = [];
   for (let k = 0; k < tries; k++) {
     const x = I.x + (rnd() * 2 - 1) * I.r * 1.05, z = I.z + (rnd() * 2 - 1) * I.r * 1.05;
     const h = islandH(I, x, z);
     if (h < 6 || h > I.peak * 0.82) continue;
     const grad = Math.hypot(islandH(I, x + 4, z) - h, islandH(I, x, z + 4) - h) / 4;
     if (grad > 0.8 || fbm(x * 0.003, z * 0.003, I.seed + 70, 3) < 0.36) continue;
-    veg.push([x, h, z, 6 + rnd() * 7, rnd()]);
+    veg.push([x, h, z, 4 + rnd() * rnd() * 9, rnd()]);
   }
   const vm = new THREE.InstancedMesh(vegGeo, vegMat, Math.max(1, veg.length));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
@@ -360,7 +383,7 @@ function buildIsland(I) {
     q.setFromEuler(new THREE.Euler(0, r * 6.28, 0));
     m.compose(p.set(x, h + sz * 0.35, z), q, s.set(sz, sz * 0.8, sz));
     vm.setMatrixAt(i, m);
-    vm.setColorAt(i, c.copy(PAL.jungleA).lerp(PAL.jungleB, r).multiplyScalar(0.8 + r * 0.4));
+    vm.setColorAt(i, c.copy(PAL.jungleA).lerp(PAL.jungleC, r).multiplyScalar(0.7 + 0.6 * ((r * 7.31) % 1)));   // 每棵树深浅不同
   });
   scene.add(vm); objs.push(vm);
   return objs;
@@ -377,7 +400,7 @@ function updateIslands(cam, buildNow = false) {
     }
   for (const [I, objs] of builtIslands) {
     if (Math.hypot(I.x - cam.x, I.z - cam.z) - I.r < DROP_R) continue;
-    for (const o of objs) { scene.remove(o); if (o.geometry !== vegGeo) o.geometry.dispose(); if (o.material !== vegMat) o.material.dispose(); }
+    for (const o of objs) { scene.remove(o); if (o.geometry !== vegGeo) o.geometry.dispose(); if (o.material !== vegMat && o.material !== terrainMat) o.material.dispose(); }
     builtIslands.delete(I);
   }
   buildQueue.sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z));
@@ -393,15 +416,19 @@ updateIslands(new THREE.Vector3(2400, 0, 900), true);
 
 // ---------- 云（单次绘制的实例化公告板） ----------
 function cloudTexture(N = 256) {
+  // 平底积云团：下半部被削平，亮度从顶到底渐暗（贴图不旋转，平底和明暗才一直朝下）
   const cv = document.createElement('canvas'); cv.width = cv.height = N;
   const ctx = cv.getContext('2d'), img = ctx.createImageData(N, N);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const dx = x / N * 2 - 1, dy = y / N * 2 - 1, d = Math.hypot(dx, dy);
-    const nz = fbm(x / 22, y / 22, 5, 6);
-    const a = smoothstep(0.05, 0.6, (1 - d) * (0.3 + 1.3 * nz));
-    const sh = 0.6 + 0.4 * nz * (1 - d * 0.6);
+    const dx = x / N * 2 - 1, dy = y / N * 2 - 1;
+    const wx = dx + 0.25 * (fbm(x / 40, y / 40, 11, 4) - 0.5), wy = dy + 0.25 * (fbm(x / 40 + 9, y / 40, 12, 4) - 0.5);
+    const d = Math.hypot(wx, wy * (wy > 0 ? 1.6 : 1));
+    const nz = fbm(x / 18, y / 18, 5, 6);
+    let a = smoothstep(0.02, 0.5, (1 - d) * (0.35 + 1.25 * nz));
+    a *= 1 - smoothstep(0.32, 0.55, dy);   // 平底
+    const sh = THREE.MathUtils.lerp(1.0, 0.5, smoothstep(-0.7, 0.45, dy)) * (0.78 + 0.32 * nz);
     const o = (y * N + x) * 4;
-    img.data[o] = img.data[o + 1] = img.data[o + 2] = sh * 255; img.data[o + 3] = a * 255;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = Math.min(255, sh * 255); img.data[o + 3] = a * 255;
   }
   ctx.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.NoColorSpace; return t;
@@ -416,7 +443,7 @@ const puffs = [];
       const ox = (rnd() + rnd() - 1) * cs * 1.2, oz = (rnd() + rnd() - 1) * cs * 0.8, oy01 = Math.pow(rnd(), 1.3) * (1 - Math.abs(ox) / cs * 0.5);
       const oy = oy01 * cs * 0.7;
       puffs.push({ pos: [cx + ox, cy + oy, cz + oz], size: (0.35 + rnd() * 0.5) * cs * (1 - oy01 * 0.35),
-                   rot: rnd() * 6.28, oy01, side: new THREE.Vector3(ox, oy - cs * 0.15, oz).normalize() });
+                   rot: (rnd() - 0.5) * 0.35, oy01, side: new THREE.Vector3(ox, oy - cs * 0.15, oz).normalize() });
     }
   }
 }
@@ -454,9 +481,10 @@ const cloudMat = new THREE.ShaderMaterial({
       vec4 t = texture2D(map, vUv);
       float a = t.a * 0.62 * smoothstep(40.0, 260.0, vDepth);
       if (a < 0.01) discard;
-      vec3 col = vColor * mix(0.72, 1.0, t.r);
+      vec3 col = vColor * mix(0.45, 1.08, t.r);
       float f = 1.0 - exp(-fogDensity * fogDensity * vDepth * vDepth);
-      gl_FragColor = vec4(mix(col, fogColor, f), a);
+      float ap = (1.0 - exp(-vDepth / 20000.0)) * 0.6;   // 大气透视：远处的云被染成天际色
+      gl_FragColor = vec4(mix(col, fogColor, max(f, ap)), a);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
     }`,
@@ -666,7 +694,47 @@ const composer = new EffectComposer(renderer, rt);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), P.bloomStrength, P.bloomRadius, P.bloomThreshold);
 composer.addPass(bloom);
+// 阳光光束：把画面里的亮处沿着朝向太阳的方向做径向拖影（太阳在画面附近时才有）
+const godRays = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uK: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uSun; uniform float uK; varying vec2 vUv;
+    void main() {
+      vec4 base = texture2D(tDiffuse, vUv);
+      if (uK <= 0.001) { gl_FragColor = base; return; }
+      // 只采太阳附近的亮天空（不拉飞机上的亮点），起点加随机抖动避免一节一节的断点
+      vec2 d = (vUv - uSun) / 40.0; float j = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
+      vec2 uv = vUv - d * j; float w = 1.0; vec3 acc = vec3(0.0);
+      for (int i = 0; i < 40; i++) { uv -= d; vec3 c = texture2D(tDiffuse, uv).rgb; float nearSun = 1.0 - smoothstep(0.05, 0.3, length((uv - uSun) * vec2(1.78, 1.0)));
+        acc += max(c - 1.2, 0.0) * nearSun * w; w *= 0.95; }
+      gl_FragColor = vec4(base.rgb + acc * 0.045 * uK, base.a);
+    }` });
+composer.addPass(godRays);
 composer.addPass(new OutputPass());
+// 电影调色：亮部微暖、暗部微冷、适度提饱和与对比，四周轻微压暗
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uVig: { value: 0.22 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uVig; varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      float l = dot(c, vec3(0.299, 0.587, 0.114));
+      c += mix(vec3(-0.012, 0.0, 0.022), vec3(0.03, 0.012, -0.022), smoothstep(0.15, 0.85, l));   // 分离色调
+      c = mix(vec3(l), c, 1.12);                                                                     // 饱和度
+      c = mix(c, c * c * (3.0 - 2.0 * c), 0.18);                                                     // 柔和 S 曲线
+      vec2 q = vUv - 0.5; c *= 1.0 - uVig * smoothstep(0.35, 0.95, length(q * vec2(1.0, 0.8)) * 1.35);
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+    }` });
+composer.addPass(grade);
+// 每帧算太阳在屏幕上的位置；太阳在身后或天气阴沉时关掉光束
+const _sp = new THREE.Vector3();
+function updateGodRays() {
+  const W = WEATHER[weather];
+  _sp.copy(camera.position).addScaledVector(sunDir, 5000).project(camera);
+  const facing = camera.getWorldDirection(_b).dot(sunDir);
+  const k = W.night || W.storm || weather === 'overcast' ? 0 : smoothstep(0.1, 0.6, facing) * (1 - smoothstep(1.2, 1.9, Math.max(Math.abs(_sp.x), Math.abs(_sp.y))));
+  godRays.uniforms.uSun.value.set(_sp.x * 0.5 + 0.5, _sp.y * 0.5 + 0.5); godRays.uniforms.uK.value = k;
+}
 
 // ---------- 地面高度（坠毁判定） ----------
 function groundH(x, z) {
@@ -896,7 +964,7 @@ const plumeFrag = `
   void main() {
     float t = clamp(vT, 0.0, 1.0);
     float core = exp(-t * 5.0);
-    float diamonds = 0.55 + 0.45 * cos(t * uLen * 2.2);
+    float diamonds = 1.0 - 0.22 * (0.5 + 0.5 * cos(t * 26.0)) * (1.0 - smoothstep(0.25, 0.6, t));   // 喷口后几节淡淡的激波环
     float u = max(1.0 - t, 0.0), f = clamp(vFres, 0.0, 1.0);
     float a = u * sqrt(u) * mix(0.6, 1.0, diamonds) * f * f * uI;   // 避免 pow(0, x)：部分 GPU 上会出 NaN 把泛光整屏染黑
     vec3 col = mix(vec3(1.0, 0.45, 0.15), vec3(0.75, 0.8, 1.0), core);
@@ -962,7 +1030,7 @@ class Aircraft {
     this.onDeck = false; this.landed = false; this.arrested = false; this.catT = undefined; this.catReady = false;
     this.plumes = this.nozzles.map((nz) => { const pm = makePlume(); pm.position.copy(nz); this.mesh.add(pm); return pm; });
     // 喷口光圈（加力时从后方看到的炽热喷口）+ 航行灯：左翼红、右翼绿、垂尾白色频闪
-    this.nozzleGlow = this.nozzles.map((nz) => { const sp = navSprite(new THREE.Color(9, 5.5, 2.6), 0.07 * j.len); sp.position.copy(nz).add(V3().set(0, 0, -0.2)); sp.visible = false; this.mesh.add(sp); return sp; });
+    this.nozzleGlow = this.nozzles.map((nz) => { const sp = navSprite(new THREE.Color(7, 4.5, 2.2), 0.045 * j.len); sp.position.copy(nz).add(V3().set(0, 0, -0.2)); sp.visible = false; this.mesh.add(sp); return sp; });
     const W = j.span, L0 = j.len;
     this.navL = navSprite(new THREE.Color(7, 0.35, 0.25), 0.55); this.navL.position.set(0.48 * W, 0, -0.12 * L0);
     this.navR = navSprite(new THREE.Color(0.3, 7, 0.8), 0.55); this.navR.position.set(-0.48 * W, 0, -0.12 * L0);
@@ -1423,7 +1491,8 @@ function missileMesh(owner) {
   const id = owner === player ? 'AIM-9' : 'R-77';
   if (jetGLTF[id]) {   // 真实弹体（bohmerang 导弹合集），尾部挂一束发动机火焰
     const g = jetMesh(id), pm = makePlume();
-    g.children[0].rotation.y = 0;   // 导弹模型导出时弹头已朝 +Z，不用像战机那样再转 180°（特写核对过：导引头在前、尾翼在后） pm.position.z = id === 'AIM-9' ? -1.5 : -1.8; pm.scale.set(0.11, 0.11, 3.5);
+    g.children[0].rotation.y = 0;   // 导弹模型导出时弹头已朝 +Z，不用像战机那样再转 180°（特写核对过：导引头在前、尾翼在后）
+    pm.position.z = id === 'AIM-9' ? -1.5 : -1.8; pm.scale.set(0.11, 0.11, 3.5);
     pm.material.uniforms.uI.value = 1; pm.material.uniforms.uLen.value = 3; g.add(pm); g.userData.plume = pm;
     return g;
   }
@@ -1873,14 +1942,14 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyF' && running && !e.repeat) launchMissile(player);
   if (e.code === 'KeyX' && running && player.alive) dropFlares(player);
   if (e.code === 'KeyC' && !cam.free) { cam.free = true; freeYaw = aimYaw; freePitch = aimPitch; }
-  if (e.code === 'KeyV') {   // 追尾中 → 追尾近 → 追尾远 → 座舱
-    if (cam.cockpit) { cam.cockpit = false; cam.dist = 32; }
-    else if (cam.dist > 40) cam.cockpit = true;
-    else cam.dist = cam.dist > 25 ? 20 : 55;
+  if (e.code === 'KeyV') {   // 座舱 ⇄ 追尾
+    cam.cockpit = !cam.cockpit;
     document.body.classList.toggle('cockpit', cam.cockpit);
+    showMsg(cam.cockpit ? '座舱视角' : '追尾视角');
   }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
+addEventListener('wheel', (e) => { if (running && !cam.cockpit) cam.dist = THREE.MathUtils.clamp(cam.dist * (e.deltaY > 0 ? 1.12 : 0.89), 14, 90); }, { passive: true });
 addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'KeyC') cam.free = false; });
 
 const sunInput = $('sun'), sunV = $('sunv');
@@ -2163,24 +2232,43 @@ function drawRadar() {
 // ---------- 天气 / 昼夜 ----------
 // sun 太阳高度°，turb/ray 天空散射，fogMul 雾浓度倍数，exp 曝光，dark 云变暗比例，rain 雨量，storm 闪电+乱流，night 月光+星空
 const WEATHER = {
-  clear:    { cn: '晴天',   sun: 42, turb: 2, ray: 1, fogMul: 0.3, exp: 0.62, dark: 0,  rain: 0, mie: 0.003, dome: true },
+  clear:    { cn: '晴天',   sun: 30, turb: 2, ray: 1, fogMul: 0.3, exp: 0.62, dark: 0,  rain: 0, mie: 0.003, dome: true },
   dusk:     { cn: '黄昏',   sun: 5,  turb: 8,  ray: 2.2, fogMul: 1,   exp: 0.55, dark: 0,    rain: 0 },
   noon:     { cn: '正午',   sun: 58, turb: 3,  ray: 1.0, fogMul: 0.7, exp: 0.4,  dark: 0,    rain: 0 },
   overcast: { cn: '阴天',   sun: 28, turb: 12, ray: 1.0, mie: 0.015, fogMul: 2.4, exp: 0.48, dark: 0.5,  rain: 0 },
-  storm:    { cn: '暴风雨', sun: 32, turb: 12, ray: 0.6, fogMul: 3.6, exp: 0.33, mie: 0.02,  dark: 0.72, rain: 1, storm: true },
+  storm:    { cn: '暴风雨', dome: true, domeCols: [[0.2, 0.22, 0.26], [0.06, 0.07, 0.09], [0.27, 0.29, 0.32]], sun: 32, turb: 12, ray: 0.6, fogMul: 3.6, exp: 0.33, mie: 0.02,  dark: 0.72, rain: 1, storm: true },
   night:    { cn: '夜晚',   sun: -10, turb: 1.2, ray: 3.2, fogMul: 1.1, exp: 1.25, dark: 0.2,  rain: 0, night: true },
 };
-let weather = 'dusk';
+let weather = 'clear';
 // 星空：夜里才显示，跟着镜头
 const stars = (() => {
-  const n = 2600, pos = new Float32Array(n * 3), rnd = mulberry32(99);
+  const n = 5200, pos = new Float32Array(n * 3), mag = new Float32Array(n), col = new Float32Array(n * 3), rnd = mulberry32(99);
+  const gn = new THREE.Vector3(0.35, 0.55, 0.76).normalize(), v = new THREE.Vector3(), cc = new THREE.Color();
   for (let i = 0; i < n; i++) {
-    const u = rnd() * 2 * Math.PI, v = Math.acos(rnd() * 0.98), r = 9000;
-    pos.set([r * Math.sin(v) * Math.cos(u), r * Math.cos(v), r * Math.sin(v) * Math.sin(u)], i * 3);
+    // 一半星星聚在银河带附近
+    for (let tries = 0; tries < 20; tries++) {
+      v.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize();
+      if (v.y < 0.02) continue;
+      if (i % 2 === 0 || Math.abs(v.dot(gn)) < 0.12 * (1 + rnd())) break;
+    }
+    pos.set([v.x * 9000, v.y * 9000, v.z * 9000], i * 3);
+    mag[i] = Math.pow(rnd(), 6);   // 大多数很暗，少数很亮
+    const tK = rnd(); cc.setRGB(0.75 + 0.25 * tK, 0.82 + 0.12 * Math.sin(tK * 3), 1.05 - 0.35 * tK);   // 偏蓝到偏黄
+    col.set([cc.r, cc.g, cc.b], i * 3);
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xdfe8ff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
-  pts.frustumCulled = false; scene.add(pts);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aMag', new THREE.BufferAttribute(mag, 1)); g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { opacity: { value: 0 }, uTime: { value: 0 } },
+    vertexShader: `attribute float aMag; attribute vec3 aCol; uniform float uTime; varying float vB; varying vec3 vC;
+      void main() { vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww;
+        float tw = 0.75 + 0.25 * sin(uTime * (2.0 + 5.0 * fract(position.x * 0.013)) + position.z);
+        vB = (0.25 + 2.2 * aMag) * mix(1.0, tw, 0.7) * smoothstep(0.0, 900.0, position.y); vC = aCol;
+        gl_PointSize = 1.2 + 3.2 * aMag; }`,
+    fragmentShader: `uniform float opacity; varying float vB; varying vec3 vC;
+      void main() { float r = length(gl_PointCoord - 0.5) * 2.0; float a = exp(-r * r * 3.5) * vB * opacity; if (a < 0.01) discard; gl_FragColor = vec4(vC * a * 2.2, a); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  pts.frustumCulled = false; pts.renderOrder = -2; scene.add(pts);
   return pts;
 })();
 // 月亮：贴在天空方向上的发光圆盘（光照/海面月光带在 updateSun 里用同一个方向）
@@ -2188,18 +2276,55 @@ const moonDir = () => _w2.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 
 const _w2 = V3();
 const moon = new THREE.Mesh(new THREE.CircleGeometry(170, 48), new THREE.MeshBasicMaterial({ map: glowTexture(), color: new THREE.Color(3.2, 3.3, 3.6), transparent: true, fog: false, depthWrite: false }));
 moon.visible = false; moon.renderOrder = -1; scene.add(moon);
+const cirrus = (() => {
+  const N = 512, cv = document.createElement('canvas'); cv.width = cv.height = N;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(N, N), P0 = 16;
+  const tn = (x, y, s) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const H = (a, b) => hash2(((a % P0) + P0) % P0, ((b % P0) + P0) % P0, s);
+    return H(xi, yi) + (H(xi + 1, yi) - H(xi, yi)) * u + (H(xi, yi + 1) - H(xi, yi)) * v + (H(xi, yi) - H(xi + 1, yi) - H(xi, yi + 1) + H(xi + 1, yi + 1)) * u * v; };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const X = x / N * P0, Y = y / N * P0;
+    const warp = tn(X * 0.5, Y * 0.5, 3) * 2;
+    let v = 0; for (let o = 0, f = 1, a = 0.5; o < 4; o++, f *= 2, a *= 0.5) v += a * tn((X + warp) * f * 0.25, Y * f * 2.5, 7 + o);   // 横向拉长成丝
+    const a = smoothstep(0.45, 0.85, v) * 0.85;
+    const i = (y * N + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = 255; img.data[i + 3] = a * 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000), new THREE.ShaderMaterial({
+    uniforms: { map: { value: tex }, uCam: { value: new THREE.Vector3() }, uCol: { value: new THREE.Color(1, 1, 1) }, uK: { value: 0 } },
+    vertexShader: 'uniform vec3 uCam; varying vec2 vW; varying float vR; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xz; vR = length(w.xz - uCam.xz); gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: 'uniform sampler2D map; uniform vec3 uCol; uniform float uK; varying vec2 vW; varying float vR; void main() { float a = texture2D(map, vW / 26000.0).a * uK * (1.0 - smoothstep(12000.0, 29000.0, vR)); if (a < 0.003) discard; gl_FragColor = vec4(uCol, a); }',
+    transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide }));
+  m.rotation.x = -Math.PI / 2; m.frustumCulled = false; m.renderOrder = -1; scene.add(m);
+  return m;
+})();
 // 夜空：地平线深蓝、头顶近黑的渐变穹顶，夜里替代散射天空
 const NIGHT_HORIZON = new THREE.Color(0.035, 0.06, 0.13), NIGHT_ZENITH = new THREE.Color(0.004, 0.007, 0.02);
-const DAY_HORIZON = new THREE.Color(0.62, 0.8, 1.05), DAY_ZENITH = new THREE.Color(0.07, 0.24, 0.72);
+const DAY_HORIZON = new THREE.Color(0.42, 0.66, 1.05), DAY_ZENITH = new THREE.Color(0.04, 0.17, 0.6), DAY_HAZE = new THREE.Color(0.86, 0.91, 1.0), NIGHT_HAZE = new THREE.Color(0.05, 0.08, 0.15);
 const nightSky = new THREE.Mesh(new THREE.SphereGeometry(9800, 32, 16), new THREE.ShaderMaterial({
-  uniforms: { uH: { value: NIGHT_HORIZON.clone() }, uZ: { value: NIGHT_ZENITH.clone() }, uSun: { value: new THREE.Vector3() }, uSunK: { value: 0 } },
+  uniforms: { uH: { value: NIGHT_HORIZON.clone() }, uZ: { value: NIGHT_ZENITH.clone() }, uHaze: { value: new THREE.Color() }, uSun: { value: new THREE.Vector3() }, uSunK: { value: 0 }, uNight: { value: 0 } },
   vertexShader: 'varying vec3 vD; void main() { vD = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
-  fragmentShader: `uniform vec3 uH; uniform vec3 uZ; uniform vec3 uSun; uniform float uSunK; varying vec3 vD;
+  fragmentShader: `uniform vec3 uH; uniform vec3 uZ; uniform vec3 uHaze; uniform vec3 uSun; uniform float uSunK; uniform float uNight; varying vec3 vD;
+    float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+    float n3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+                 mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }
     void main() {
-      float k = pow(clamp(vD.y, 0.0, 1.0), 0.45);
-      vec3 c = mix(uH, uZ, k);
-      float s = max(dot(normalize(vD), uSun), 0.0);
-      c += uSunK * (vec3(30.0, 28.0, 24.0) * pow(s, 2200.0) + vec3(1.2, 1.1, 0.9) * pow(s, 60.0) * 0.6 + vec3(0.5, 0.5, 0.45) * pow(s, 6.0) * 0.25);
+      vec3 d = normalize(vD);
+      float y = max(d.y, 0.0);
+      vec3 c = mix(uH, uZ, pow(y, 0.42));
+      float haze = exp(-y * 10.0);
+      c = mix(c, uHaze, haze * 0.8);   // 地平线附近一圈发白的雾霭
+      float s = max(dot(d, uSun), 0.0);
+      c += uSunK * (vec3(30.0, 28.0, 24.0) * pow(s, 2200.0) + vec3(1.3, 1.2, 1.0) * pow(s, 90.0) * 0.5
+                  + vec3(1.0, 0.95, 0.82) * pow(s, 7.0) * (0.12 + 0.35 * haze));   // 太阳圆盘 + 光晕 + 太阳一侧的散射
+      // 银河：一条倾斜的光带，带噪声的明暗
+      vec3 gn = normalize(vec3(0.35, 0.55, 0.76));
+      float band = exp(-pow(dot(d, gn) / 0.16, 2.0));
+      float neb = n3(d * 9.0) * 0.6 + n3(d * 23.0) * 0.4;
+      c += uNight * band * (0.35 + 0.65 * neb) * vec3(0.045, 0.05, 0.07) * smoothstep(0.0, 0.25, d.y);
+      if (d.y < 0.0) c = uHaze;
       gl_FragColor = vec4(c, 1.0);
     }`,
   side: THREE.BackSide, depthWrite: false, fog: false }));
@@ -2240,6 +2365,97 @@ const rain = new THREE.Mesh(rainGeo, new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, side: THREE.DoubleSide,
 }));
 rain.frustumCulled = false; rain.visible = false; rain.renderOrder = 6; scene.add(rain);
+// 积雨云：地平线上一座十几公里高、顶部摊成砧状的风暴云（暴风雨天出现，始终在镜头东北方 24 km）
+const stormCell = (() => {
+  const rnd = mulberry32(777), P = [], cx = 11000, cz = 14000;
+  for (let i = 0; i < 1500; i++) {
+    const k = rnd();
+    let x, y, z, size;
+    if (k < 0.62) {   // 主柱：往上略微变粗、带一点倾斜
+      y = 700 + Math.pow(rnd(), 0.8) * 10500; const r = (3800 + y * 0.15) * Math.sqrt(rnd()), a = rnd() * 6.28;
+      x = cx + Math.cos(a) * r + y * 0.08; z = cz + Math.sin(a) * r; size = 1800 + rnd() * 2200;
+    } else if (k < 0.9) {   // 顶部砧状云：在 9.5~11.5 km 处向下风摊开
+      y = 10500 + rnd() * 2200; const r = 13000 * Math.sqrt(rnd()), a = rnd() * 6.28;
+      x = cx + Math.cos(a) * r * 1.3 + 4000; z = cz + Math.sin(a) * r * 0.8; size = 2400 + rnd() * 3000;
+    } else {   // 底部乌黑的云底和雨幡
+      y = 400 + rnd() * 900; const r = 5200 * Math.sqrt(rnd()), a = rnd() * 6.28;
+      x = cx + Math.cos(a) * r; z = cz + Math.sin(a) * r; size = 1800 + rnd() * 1800;
+    }
+    P.push({ x, y, z, size, h: (y - 400) / 12500 });
+  }
+  const g = new THREE.InstancedBufferGeometry(), pg = new THREE.PlaneGeometry(1, 1);
+  g.index = pg.index; g.setAttribute('position', pg.attributes.position); g.setAttribute('uv', pg.attributes.uv);
+  const off = new Float32Array(P.length * 3), sz = new Float32Array(P.length), rot = new Float32Array(P.length), col = new Float32Array(P.length * 3);
+  P.forEach((p, i) => { off.set([p.x, p.y, p.z], i * 3); sz[i] = p.size; rot[i] = (rnd() - 0.5) * 0.4; });
+  g.setAttribute('iOffset', new THREE.InstancedBufferAttribute(off, 3)); g.setAttribute('iSize', new THREE.InstancedBufferAttribute(sz, 1));
+  g.setAttribute('iRot', new THREE.InstancedBufferAttribute(rot, 1)); g.setAttribute('iColor', new THREE.InstancedBufferAttribute(col, 3));
+  g.instanceCount = P.length;
+  const mat = cloudMat.clone();
+  mat.uniforms = THREE.UniformsUtils.clone(cloudMat.uniforms); mat.uniforms.map.value = cloudMat.uniforms.map.value;
+  mat.uniforms.fogDensity.value = 1.2e-5;
+  mat.vertexShader = mat.vertexShader.replace('o.xz = uCam.xz + mod(o.xz - uCam.xz + 20000.0, 40000.0) - 20000.0;', 'o += cameraPosition * vec3(1.0, 0.0, 1.0);');   // 整团云跟着镜头平移
+  const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.visible = false; m.renderOrder = -0.5; scene.add(m);
+  m.userData.P = P;
+  return m;
+})();
+// 闪电照亮云体：离闪光点越近越亮
+function colorStormCell(flash, fx = 0, fy = 0, fz = 0) {
+  const P = stormCell.userData.P, arr = stormCell.geometry.attributes.iColor.array;
+  P.forEach((p, i) => {
+    const base = 0.05 + 0.2 * Math.pow(p.h, 0.8);
+    const d = Math.hypot(p.x - fx, p.y - fy, p.z - fz), fl = flash * 3.2 * Math.exp(-d / 2600);
+    arr[i * 3] = base * 0.95 + fl * 0.85; arr[i * 3 + 1] = base * 0.98 + fl * 0.9; arr[i * 3 + 2] = base * 1.1 + fl * 1.1;
+  });
+  stormCell.geometry.attributes.iColor.needsUpdate = true;
+}
+// 闪电：发光的分叉雷电（实例化的发光条带），一次连闪几下
+const BOLT_MAX = 400;
+const boltA = new Float32Array(BOLT_MAX * 3), boltB = new Float32Array(BOLT_MAX * 3), boltW = new Float32Array(BOLT_MAX);
+const boltGeo2 = new THREE.InstancedBufferGeometry();
+{ const pg = new THREE.PlaneGeometry(1, 1); boltGeo2.index = pg.index; boltGeo2.setAttribute('position', pg.attributes.position); boltGeo2.setAttribute('uv', pg.attributes.uv); }
+boltGeo2.setAttribute('iA', new THREE.InstancedBufferAttribute(boltA, 3)); boltGeo2.setAttribute('iB', new THREE.InstancedBufferAttribute(boltB, 3)); boltGeo2.setAttribute('iW', new THREE.InstancedBufferAttribute(boltW, 1));
+boltGeo2.instanceCount = 0;
+const bolt2 = new THREE.Mesh(boltGeo2, new THREE.ShaderMaterial({
+  uniforms: { uI: { value: 0 } },
+  vertexShader: `attribute vec3 iA; attribute vec3 iB; attribute float iW; varying vec2 vUv;
+    void main() { vec4 a = viewMatrix * vec4(iA, 1.0), b = viewMatrix * vec4(iB, 1.0); vec4 p = mix(a, b, position.y + 0.5);
+      vec2 d = normalize((b.xy / max(-b.z, 0.1)) - (a.xy / max(-a.z, 0.1)) + 1e-5); float w = max(iW, -p.z * 0.004);
+      p.xy += vec2(-d.y, d.x) * position.x * w; vUv = uv; gl_Position = projectionMatrix * p; }`,
+  fragmentShader: `uniform float uI; varying vec2 vUv; void main() { float x = abs(vUv.x * 2.0 - 1.0); float core = exp(-x * x * 30.0), glow = exp(-x * x * 3.0);
+      float a = (core * 1.0 + glow * 0.35) * uI; gl_FragColor = vec4(vec3(9.0, 9.5, 14.0) * a, a); }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+bolt2.frustumCulled = false; bolt2.renderOrder = 7; scene.add(bolt2);
+let boltPulse = [], boltClock = 0, boltPt = new THREE.Vector3();
+// 生成一道从云底劈到海面的雷电：主干 + 几条分叉
+function makeBolt(top, bottomY) {
+  let n = 0;
+  const seg = (a, b, w) => { if (n >= BOLT_MAX) return; boltA.set([a.x, a.y, a.z], n * 3); boltB.set([b.x, b.y, b.z], n * 3); boltW[n] = w; n++; };
+  const walk = (start, len, w, dir, depth) => {
+    let p = start.clone(); const steps = Math.max(4, Math.round(len / 60));
+    for (let k = 0; k < steps && p.y > bottomY; k++) {
+      const q = p.clone().add(V3().set(dir.x * 60 + rand(-40, 40), -60 * (0.6 + Math.random() * 0.8), dir.z * 60 + rand(-40, 40)));
+      seg(p, q, w); p = q;
+      if (depth < 2 && Math.random() < 0.09) walk(p.clone(), len * rand(0.15, 0.4), w * 0.5, V3().set(rand(-1.5, 1.5), 0, rand(-1.5, 1.5)), depth + 1);
+    }
+    return p;
+  };
+  walk(top, top.y - bottomY + 200, 7, V3(), 0);
+  boltGeo2.instanceCount = n;
+  for (const k of ['iA', 'iB', 'iW']) boltGeo2.attributes[k].needsUpdate = true;
+}
+// 触发一次雷击：位置可指定（宣传片用），否则随机落在风暴云下方或附近
+function triggerLightning(at) {
+  const cp = camera.position;
+  const p = at ? at.clone() : (Math.random() < 0.6
+    ? V3().set(cp.x + 11000 + rand(-3500, 3500), 0, cp.z + 14000 + rand(-3500, 3500))
+    : V3().set(cp.x + rand(-9000, 9000), 0, cp.z + rand(4000, 12000)));
+  makeBolt(V3().set(p.x, 1300, p.z), 0);
+  boltPt.copy(p).setY(1200); boltClock = 0;
+  boltPulse = [[0, 1], [0.06, 0.25], [0.11, 0.9], [0.2, 0.15], [0.27, 0.7], [0.45, 0]];   // 主闪 + 回击连闪
+  const d = Math.hypot(p.x - cp.x, p.z - cp.z);
+  if (audio) { playReal('thunder', Math.min(1.4, 3 / (1 + d / 3000)), Math.max(500, 7000 - d * 0.4), d / 340); playReal('boom_low', Math.min(1.2, 2.5 / (1 + d / 2000)), 300, d / 340, 0.6); }
+  window.__onLightning && window.__onLightning(d);
+}
 // 闪电：一道折线 + 全场闪亮，雷声按距离延迟
 const boltGeo = new THREE.BufferGeometry();
 boltGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(40 * 3), 3));
@@ -2257,25 +2473,32 @@ function applyWeather(id) {
   updateSun(); updateSmokeTint();
   for (const m of [cloudMat, smokeFx.mat, glowFx.mat]) m.uniforms.fogDensity.value = scene.fog.density;
   const dome = W.night || W.dome;
-  stars.material.opacity = W.night ? 1 : 0; moon.visible = !!W.night; nightSky.visible = !!dome; sky.visible = !dome;
+  stars.material.uniforms.opacity.value = W.night ? 1 : 0; moon.visible = !!W.night; nightSky.visible = !!dome; sky.visible = !dome;
   if (dome) {
     const U = nightSky.material.uniforms;
     U.uH.value.copy(W.night ? NIGHT_HORIZON : DAY_HORIZON); U.uZ.value.copy(W.night ? NIGHT_ZENITH : DAY_ZENITH);
-    U.uSun.value.copy(sunDir); U.uSunK.value = W.night ? 0 : 1;
+    if (W.domeCols) { U.uH.value.setRGB(...W.domeCols[0]); U.uZ.value.setRGB(...W.domeCols[1]); }
+    U.uSun.value.copy(sunDir); U.uSunK.value = W.night || W.storm ? 0 : 1; U.uNight.value = W.night ? 1 : 0; U.uHaze.value.copy(W.night ? NIGHT_HAZE : DAY_HAZE);
+    if (W.domeCols) U.uHaze.value.setRGB(...W.domeCols[2]);
     // 环境光照、海面倒影的天空也换成这个穹顶
     scene.remove(nightSky); envScene.add(nightSky); nightSky.position.set(0, 0, 0);
     if (envRT) envRT.dispose(); envRT = pmrem.fromScene(envScene); scene.environment = envRT.texture;
     envScene.remove(nightSky); scene.add(nightSky);
-    scene.fog.color.copy(U.uH.value).multiplyScalar(W.night ? 1.4 : 0.85);
+    scene.fog.color.copy(U.uHaze.value).multiplyScalar(W.night ? 1.2 : 0.92);
     for (const m of [cloudMat, smokeFx.mat, glowFx.mat]) m.uniforms.fogColor.value = scene.fog.color;
   }
   rain.visible = W.rain > 0;
+  cirrus.material.uniforms.uK.value = W.night || W.storm || weather === 'overcast' ? 0 : 0.55;
+  cirrus.material.uniforms.uCol.value.copy(sunLight.color).multiplyScalar(0.9 + 0.2 * Math.min(1, sunLight.intensity / 3));
+  stormCell.visible = !!W.storm; if (W.storm) colorStormCell(0);
   water.material.uniforms.distortionScale.value = W.storm ? 14 : 8;
   rain.material.uniforms.uRes.value = innerHeight;
 }
 function updateWeather(dt) {
   const W = WEATHER[weather];
   stars.position.copy(camera.position); nightSky.position.copy(camera.position);
+  cirrus.position.set(camera.position.x, 9000, camera.position.z); cirrus.material.uniforms.uCam.value.copy(camera.position); stars.material.uniforms.uTime.value += dt;
+  if (stormCell.visible) stormCell.position.set(camera.position.x, 0, camera.position.z);
   if (moon.visible) { moon.position.copy(camera.position).addScaledVector(moonDir(), 8500); moon.lookAt(camera.position); }
   if (rain.visible) {
     // 雨点相对镜头的运动 = 下落速度 − 飞机速度；拖影长度按 1/50 秒快门算
@@ -2291,17 +2514,17 @@ function updateWeather(dt) {
   if (W.storm) {
     // 乱流：给玩家一点随机角速度
     if (player.alive && !player.onDeck) { player.st.w.x += rand(-1, 1) * 0.8 * dt; player.st.w.z += rand(-1, 1) * 1.2 * dt; }
-    if ((nextBolt -= dt) <= 0) {
-      nextBolt = rand(5, 14);
-      const ang = rand(0, 6.28), d = rand(2500, 9000), x = camera.position.x + Math.cos(ang) * d, z = camera.position.z + Math.sin(ang) * d;
-      const arr = boltGeo.attributes.position.array; let px = x, pz = z;
-      for (let k = 0; k < 40; k++) { const y = 1600 - k * 41; px += rand(-60, 60); pz += rand(-60, 60); arr.set([px, Math.max(0, y), pz], k * 3); }
-      boltGeo.attributes.position.needsUpdate = true;
-      bolt.visible = true; boltT = 0.18; flashK = 1;
-      if (audio) playReal('thunder', Math.min(1.2, 2.5 / (1 + d / 2500)), Math.max(600, 6000 - d * 0.5), d / 340);
-    }
+    if ((nextBolt -= dt) <= 0) { nextBolt = rand(4, 10); triggerLightning(); }
   }
-  if ((boltT -= dt) <= 0) bolt.visible = false;
+  // 雷电连闪：按脉冲表点亮雷电、照亮风暴云和整片天空
+  if (boltPulse.length) {
+    boltClock += dt;
+    while (boltPulse.length > 1 && boltClock >= boltPulse[1][0]) boltPulse.shift();
+    const I = boltPulse[0][1] * (boltPulse.length > 1 ? 1 : 0);
+    bolt2.material.uniforms.uI.value = I; flashK = Math.max(flashK, I * 0.3);
+    if (stormCell.visible) colorStormCell(I, stormCell.position.x + boltPt.x - camera.position.x, boltPt.y, stormCell.position.z + boltPt.z - camera.position.z);
+    if (boltPulse.length === 1) { boltPulse = []; bolt2.material.uniforms.uI.value = 0; if (stormCell.visible) colorStormCell(0); }
+  }
   flashK = Math.max(0, flashK - dt * 5);
   renderer.toneMappingExposure = W.exp * (1 + flashK * 2.5);
   if (audio?.loops.rain) audio.loops.rain.g.gain.setTargetAtTime(W.rain && running ? 0.5 : 0, audio.ac.currentTime, 0.3);
@@ -2338,6 +2561,7 @@ async function boot() {
   const others = JET_IDS.filter((id) => id !== playerType).sort(() => Math.random() - 0.5);
   await Promise.all([playerType, ...others.slice(0, 3), 'CVN-78', 'B-2', 'AIM-9', 'R-77'].map(loadJet));
   placeCarrier();
+  applyWeather('clear');
   startMission();
   booted = true;
   const l = $('loading'); l.style.opacity = 0; setTimeout(() => l.remove(), 1000);
@@ -2404,6 +2628,7 @@ renderer.setAnimationLoop(() => {
   if (player.mesh) aimShadow(player.st.pos);
   if (booted) updateWeather(rdt);
   water.material.uniforms.time.value += dt * 0.8;
+  updateGodRays();
   composer.render();
   if (booted) { updateHUD(dt); updateAudio(); drawRadar(); $('obj').textContent = objectiveText(); }
 });

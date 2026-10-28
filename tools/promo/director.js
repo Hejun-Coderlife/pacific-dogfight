@@ -22,6 +22,7 @@
   // ---- 场景工具 ----
   const keep = new Set();
   function clearAll() {
+    camera.near = 1; camera.updateProjectionMatrix();
     for (let i = aircraft.length - 1; i >= 0; i--) { const a = aircraft[i]; scene.remove(a.mesh); if (a !== player) aircraft.splice(i, 1); }
     for (const m of missiles) scene.remove(m.mesh);
     missiles.length = 0; flares.length = 0; for (const b of bullets) b.life = 0;
@@ -82,6 +83,7 @@
     aimShadow(player.st.pos);
     updateWeather(dt);
     water.material.uniforms.time.value += dt * 0.8;
+    updateGodRays();
     composer.render();
   }
   const killed = (ac) => { ac.scripted = false; ac.lastAttacker = player; };
@@ -108,7 +110,7 @@
   // 3 侧面跟拍：F-22 在群岛上空缓转
   shot(5, () => { clearAll(); A = mk('F-22', true); fov(38); }, (t) => {
     const R = 5200, w = 230 / R, c = V3().set(ISL.x - R + 900, 0, ISL.z - 600);
-    const path = (u) => V3().set(c.x + R * Math.cos(w * u + 0.2), 1150 + 25 * Math.sin(u * 0.7), c.z + R * Math.sin(w * u + 0.2));
+    const path = (u) => V3().set(c.x + R * Math.cos(w * u + 0.2), 1150 + 25 * Math.sin(u * 0.25), c.z + R * Math.sin(w * u + 0.2));
     fly(A, path, t, 0.8);
     const k = ease(t / 5);
     look(chase(A, THREE.MathUtils.lerp(30, -12, k), 7 + 4 * k, -42), A.st.pos.clone().addScaledVector(A.st.vel, 0.02));
@@ -128,7 +130,7 @@
     beds.push({ k: 'fight' });
   }, (t) => {
     const R = 3200, w = 245 / R, c = V3().set(-6000, 1800, -2000);
-    const pathB = (u) => V3().set(c.x + R * Math.cos(w * u), c.y + 60 * Math.sin(u * 0.9), c.z + R * Math.sin(w * u));
+    const pathB = (u) => V3().set(c.x + R * Math.cos(w * u), c.y + 60 * Math.sin(u * 0.18), c.z + R * Math.sin(w * u));
     const pathA = (u) => pathB(u - 1.25).add(V3().set(0, -8, 0));
     if (B.scripted) fly(B, pathB, t, 1);
     fly(A, (u) => pathA(u), t, 1);
@@ -139,13 +141,25 @@
     if (t > 5.4 && !B.exploded) { killed(B); B.hp.fuse = 0; explodeAir(B); }
     look(chase(A, 32, 9, 7), lerpV(A.st.pos, B.st.pos, 0.3));
   });
+  // 5b 座舱视角：从驾驶员眼睛看出去，仪表板 + HUD 框，前方敌机在群岛上空转弯
+  shot(4, () => { clearAll(); A = mk('F-22', true); B = mk('Su-57'); fov(66); camera.near = 0.1; camera.updateProjectionMatrix(); }, (t) => {
+    const R = 20000, w = 240 / R, c = V3().set(ISL.x - 19600, 900, ISL.z - 1400);   // 大半径缓转，坡度约 15°
+    const pathB = (u) => V3().set(c.x + R * Math.cos(w * u), c.y + 30 * Math.sin(u * 0.25), c.z + R * Math.sin(w * u));
+    fly(B, pathB, t, 1); fly(A, (u) => pathB(u - 1.1).add(V3().set(0, 12, 0)), t, 0.95);
+    A.mesh.position.copy(A.st.pos); A.mesh.quaternion.copy(A.st.q); A.mesh.updateMatrixWorld(true);
+    camera.position.copy(A.mesh.localToWorld(eyePos('F-22').clone()));
+    camera.quaternion.copy(A.st.q).multiply(new THREE.Quaternion().setFromAxisAngle(UP, Math.PI));
+    leadAim.ok = true; leadAim.target = B; leadAim.dist = A.st.pos.distanceTo(B.st.pos);
+    A.firing = t > 2.4 && t < 3.4;
+    if (window.__DBG && Math.abs(t - 1.5) < 0.02) { const f = V3().set(0,0,1).applyQuaternion(A.st.q), u = V3().set(0,1,0).applyQuaternion(A.st.q), cu = V3().set(0,1,0).applyQuaternion(camera.quaternion), cf = camera.getWorldDirection(V3()); console.log('CK f=' + f.toArray().map(v=>v.toFixed(2)) + ' up=' + u.toArray().map(v=>v.toFixed(2)) + ' camUp=' + cu.toArray().map(v=>v.toFixed(2)) + ' camFwd=' + cf.toArray().map(v=>v.toFixed(2)) + ' eye=' + eyePos('F-22').toArray().map(v=>v.toFixed(2)) + ' g=' + A.st.g.toFixed(2)); }
+  });
   // 6 导弹视角：发射 → 敌机放诱饵 → 命中慢镜头
   let MS = null, slow = 1;
   shot(6, () => {
     clearAll(); A = mk('F-22', true); B = mk('MiG-29'); fov(50); MS = null; slow = 1;
   }, (t) => {
     const sim = t;
-    const pathB = (u) => V3().set(4000 + 250 * u, 2100 + 40 * Math.sin(u), -9000 + 60 * u + 20 * u * u);
+    const pathB = (u) => V3().set(4000 + 250 * u, 2100 + 40 * Math.sin(u * 0.2), -9000 + 60 * u + 20 * u * u);
     const pathA = (u) => V3().set(4000 + 250 * u - 2600, 2050, -9000 + 60 * u - 300);
     if (B.scripted) fly(B, pathB, sim, 1);
     fly(A, pathA, sim, 1);
@@ -195,16 +209,20 @@
     if (Math.abs(t - 1.0) < DT / 2) ev('missile', 0.6, A.st.pos, 0.5);
     look(carrierWorld(-16, 98, DECK_Y() + 3, V3()), A.st.pos.clone().addScaledVector(fwd, 6));
   });
-  // 9 暴风雨：雨中穿云，闪电
-  shot(6, () => {
-    clearAll(); applyWeather('storm'); A = mk('F-22', true); fov(48); nextBolt = 0.6;
-    beds.push({ k: 'storm' });
-  }, (t) => {
-    const path = (u) => V3().set(-9000 + 280 * u, 1300 + 40 * Math.sin(u * 0.8), 3000 + 60 * Math.sin(u * 0.5));
-    fly(A, path, t, 0.9);
-    A.st.q.multiply(new THREE.Quaternion().setFromAxisAngle(V3().set(0, 0, 1), 0.035 * Math.sin(t * 7)));   // 乱流颠簸
-    if (nextBolt > 3) nextBolt = 2.2;
-    look(chase(A, 34 - t * 2, 7, -12), A.st.pos.clone().addScaledVector(A.st.vel, 0.12));
+  // 9 暴风雨：贴着海面仰拍，F-22 冲向地平线上那座巨大的积雨云，闪电劈下
+  const BOLTS = [[0.9, 9000, 12500], [2.7, 3800, 5200], [4.5, 10500, 15500]];
+  shot(6, () => { clearAll(); applyWeather('storm'); A = mk('F-22', true); fov(52); nextBolt = 99; }, (t) => {
+    const dir = V3().set(0.62, 0, 0.79).normalize(), side = V3().crossVectors(dir, UP).normalize();
+    const base = V3().set(-9000, 0, 3000);
+    const path = (u) => base.clone().addScaledVector(dir, 250 * u).addScaledVector(side, 20 * Math.sin(u * 0.6)).add(V3().set(0, 330 + 15 * Math.sin(u * 0.3), 0));
+    fly(A, path, t, 0.95);
+    A.st.q.multiply(new THREE.Quaternion().setFromAxisAngle(V3().set(0, 0, 1), 0.03 * Math.sin(t * 7)));   // 乱流颠簸
+    nextBolt = 99;
+    for (const [bt, fwd, lat] of BOLTS) if (Math.abs(t - bt) < DT / 2) {
+      const cp = camera.position; triggerLightning(V3().set(cp.x + dir.x * lat + side.x * (fwd - 9000) * 0.3, 0, cp.z + dir.z * lat + side.z * (fwd - 9000) * 0.3));
+      ev('thunder', fwd < 5000 ? 1.4 : 0.9, null); ev('boom_low', fwd < 5000 ? 1.2 : 0.6, null, 0.6);
+    }
+    look(A.st.pos.clone().addScaledVector(dir, -48 + 3 * t).addScaledVector(side, -16).add(V3().set(0, -7, 0)), A.st.pos.clone().addScaledVector(dir, 600).add(V3().set(0, 260, 0)));
   });
   // 10 夜晚：镜头望向月亮，两架战机拖着加力火焰从月下掠过，海面上是月光带
   let NC, ND;
@@ -246,9 +264,14 @@
     let i = starts.length - 1; while (i > 0 && starts[i] > videoT) i--;
     if (i !== cur) { cur = i; shotT = 0; slow = 1; S[i].setup(); S[i].update(0, DT); updateIslands(camera.position, true); }
     S[i].update(shotT, DT);
-    const sdt = DT * (cur === 5 ? slow : 1);
+    const sdt = DT * (cur === 6 ? slow : 1);
     world(sdt);
     S[i].update(shotT, 0);   // 物理推进后再摆一次镜头，避免相机落后一帧
+    if (window.__DBG && (Math.abs(videoT - 31.5) < 0.02 || Math.abs(videoT - 46.2) < 0.02)) {
+      const live = bullets.filter((b) => b.life > 0).length;
+      const near = []; scene.traverse((o) => { if ((o.isMesh || o.isSprite) && o.visible) { const wp = o.getWorldPosition(V3()); const dd = wp.distanceTo(camera.position); if (dd < 60) near.push((o.material?.type || '') + '@' + dd.toFixed(1) + (o.userData.plume ? '[plume]' : '') + ' s=' + o.getWorldScale(V3()).toArray().map((v) => v.toFixed(2)).join('/')); } });
+      console.log('DBG t=' + videoT.toFixed(1) + ' bullets=' + live + ' firing=' + player.firing + ' near=' + near.join(' | '));
+    }
     render(DT);
     if (player.firing) EV.push({ t: videoT, k: 'cannonframe' });
     shotT += sdt; frame++;
@@ -290,7 +313,7 @@
       }
     };
     const cuts = window.PROMO_CUTS;
-    const chord = [55, 55, 43.65, 49, 55, 41.2, 49, 55, 43.65, 36.7, 55];   // 每个镜头一个低音根音
+    const chord = [55, 55, 43.65, 49, 55, 55, 41.2, 49, 55, 36.7, 43.65, 55];   // 每个镜头一个低音根音
     cuts.forEach((c, i) => { const e = i + 1 < cuts.length ? cuts[i + 1] : len; pad(chord[i % chord.length], Math.max(0, c - 0.8), Math.min(len, e + 0.8), 0.05); pad(chord[i % chord.length] * 1.5, Math.max(0, c - 0.8), Math.min(len, e + 0.8), 0.025); });
     // 转场鼓点
     cuts.forEach((c, i) => { if (i > 0) play('boom_low', c, 0.9, 500, 0.8); });
@@ -299,9 +322,9 @@
     for (let i = 0; i < cuts.length; i++) {
       const t0 = cuts[i], t1 = i + 1 < cuts.length ? cuts[i + 1] : len;
       if (i === 0) continue;
-      loop('engine', t0, t1, i === 9 ? 0.25 : 0.45, 1.1, 6000);
-      if ([1, 3, 4, 5, 9, 10].includes(i)) loop('afterburner', t0, t1, 0.55);
-      if (i === 8) { loop('rain', t0, t1, 0.9); }
+      loop('engine', t0, t1, i === 5 ? 0.7 : i === 10 ? 0.25 : 0.45, 1.1, i === 5 ? 2500 : 6000);
+      if ([1, 3, 4, 6, 10, 11].includes(i)) loop('afterburner', t0, t1, 0.55);
+      if (i === 9) { loop('rain', t0, t1, 0.9); }
     }
     // 机炮：把连续开火的帧合并成区间
     const cf = EV.filter((e) => e.k === 'cannonframe').map((e) => e.t);
@@ -316,7 +339,6 @@
       if (e.k === 'boom_near' && e.gain > 0.5) play('boom_low', e.t + delay, Math.min(1.2, g), 900, 0.9);
     }
     // 雷声：和闪电对齐（闪电时刻记录在 EV 里没有，这里按暴风雨镜头固定几下）
-    const st = cuts[8]; for (const k of [0.7, 2.9, 5.1]) play('thunder', st + k + 0.4, 0.9, 3000);
     const rendered = await ctx.startRendering();
     // 编码 16 位 WAV
     const n = rendered.length, ch = [rendered.getChannelData(0), rendered.getChannelData(1)];
