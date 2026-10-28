@@ -19,7 +19,7 @@
 | 自由看 / 切镜头（含座舱） / 重新起飞 / 暂停 | 按住 C / V / R / Esc |
 
 ## 素材与授权
-- 战机与 B-2 模型：[bohmerang](https://sketchfab.com/bohmerang) — CC BY-NC-SA 4.0
+- 战机、B-2 与导弹（AIM-9、R-77）模型：[bohmerang](https://sketchfab.com/bohmerang) — CC BY-NC-SA 4.0
 - F-117 模型：[outpiston](https://sketchfab.com/outpiston) — CC BY-NC-SA 4.0
 - 福特号航母模型：[waelXcm](https://sketchfab.com/waelXcm) — CC BY 4.0
 - 音效：freesound.org 上的 CC0 录音（StoneyJ、TiesWijnen、JSK_Productions、qubodup、Jarusca、Henrythetrain、NenadSimic、jacksonacademyashmore、adh.dreaming、Alxy、BlueDelta、FlatHill、rob762x51）与 Kenney CC0 音效包

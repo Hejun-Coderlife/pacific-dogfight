@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  html, body { margin: 0; width: 1920px; height: 1080px; background: transparent; overflow: hidden; }
+  body { font-family: 'Avenir Next', 'Helvetica Neue', sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
+  .title { position: absolute; left: 0; right: 0; top: 330px; padding: 70px 0; text-align: center; background: radial-gradient(ellipse 55% 50% at 50% 50%, rgba(0,15,40,.32), transparent 75%); }
+  .title h1 { margin: 0; font-weight: 300; font-size: 104px; letter-spacing: .26em; padding-left: .26em; text-shadow: 0 0 2px rgba(0,0,0,.25), 0 4px 48px rgba(0,20,50,.55); }
+  .title .rule { width: 520px; height: 1px; margin: 26px auto; background: linear-gradient(90deg, transparent, #e8c98a, transparent); }
+  .title p { margin: 0; font-weight: 600; font-size: 20px; letter-spacing: .55em; padding-left: .55em; color: rgba(255,255,255,.92); text-shadow: 0 2px 16px rgba(0,20,50,.6); }
+  .cap { position: absolute; left: 120px; bottom: 120px; }
+  .cap .idx { font-weight: 500; font-size: 16px; letter-spacing: .4em; color: #e8c98a; margin-bottom: 12px; }
+  .cap .txt { font-weight: 600; font-size: 38px; letter-spacing: .16em; text-shadow: 0 2px 18px rgba(0,0,0,.55); }
+  .cap .bar { width: 64px; height: 2px; background: #e8c98a; margin-top: 18px; }
+  .credit { position: absolute; left: 0; right: 0; bottom: 46px; text-align: center; font-weight: 400; font-size: 15px; letter-spacing: .12em; color: rgba(255,255,255,.6); }
+</style></head><body><div id="c"></div><script>
+  const CAPS = ['ELEVEN MODERN FIGHTER JETS', 'TRUE-TO-LIFE FLIGHT PHYSICS', 'GUNS  ·  HEAT-SEEKING MISSILES  ·  FLARES', 'CARRIER CATAPULT LAUNCH', 'DYNAMIC WEATHER  ·  DAY TO NIGHT'];
+  const k = new URLSearchParams(location.search).get('k'), c = document.getElementById('c');
+  if (k === 'title') c.innerHTML = '<div class="title"><h1>PACIFIC DOGFIGHT</h1><div class="rule"></div><p>MODERN AIR COMBAT</p></div>';
+  else if (k === 'end') c.innerHTML = '<div class="title"><h1>PACIFIC DOGFIGHT</h1><div class="rule"></div><p>PLAY FREE IN YOUR BROWSER</p></div>' +
+    '<div class="credit">Aircraft &amp; missiles by bohmerang and outpiston  ·  Carrier by waelXcm  (Sketchfab)  ·  Sound: freesound &amp; Kenney (CC0)</div>';
+  else { const i = +k; c.innerHTML = `<div class="cap"><div class="idx">0${i + 1} / 0${CAPS.length}</div><div class="txt">${CAPS[i]}</div><div class="bar"></div></div>`; }
+  document.title = 'ready:' + k;
+</script></body></html>

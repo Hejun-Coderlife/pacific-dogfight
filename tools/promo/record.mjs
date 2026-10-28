@@ -46,27 +46,39 @@ if (preview) { console.log('preview done'); chrome.kill(); ws.close(); process.e
 const wav = await evaluate('renderAudio()', true);
 fs.writeFileSync(path.join(work, 'audio.wav'), Buffer.from(wav, 'base64'));
 chrome.kill();
-// 字幕：片名、四句卖点、片尾（文字写文件，避免符号被 ffmpeg 误解析）
-const heiti = '/System/Library/Fonts/STHeiti Medium.ttc', song = '/System/Library/Fonts/Supplemental/Songti.ttc';
-const T = (name, text) => { fs.writeFileSync(path.join(work, name + '.txt'), text); return path.join(work, name + '.txt'); };
-const fadeA = (a, b) => `alpha='if(lt(t,${a}),0,if(lt(t,${a + 0.5}),(t-${a})/0.5,if(lt(t,${b - 0.5}),1,if(lt(t,${b}),(${b}-t)/0.5,0))))'`;
-const cap = (name, text, a, b) => `drawtext=fontfile='${heiti}':textfile=${T(name, text)}:fontcolor=white:fontsize=40:x=110:y=h-170:shadowcolor=black@0.6:shadowx=2:shadowy=2:${fadeA(a, b)}`;
-const E = len;
-const vf = [
-  `drawtext=fontfile='${song}':textfile=${T('t1', '太 平 洋 空 战')}:fontcolor=0xF2D9A0:fontsize=110:x=(w-text_w)/2:y=h*0.36:shadowcolor=black@0.5:shadowx=3:shadowy=3:${fadeA(0.6, 4.6)}`,
-  `drawtext=fontfile='${heiti}':textfile=${T('t2', 'PACIFIC  DOGFIGHT')}:fontcolor=white@0.85:fontsize=34:x=(w-text_w)/2:y=h*0.36+140:${fadeA(1.0, 4.6)}`,
-  cap('c1', '11 款现代战机  ·  真实模型', 9.4, 13.6),
-  cap('c2', '真实飞行物理  ·  2.25 马赫', 14.4, 17.6),
-  cap('c3', '机炮  ·  追踪导弹  ·  热诱弹', 18.6, 30.4),
-  cap('c4', '福特号航母  ·  弹射起飞', 35.4, 39.6),
-  cap('c5', '动态天气  ·  暴风雨  ·  夜战', 40.4, 50.4),
-  `drawtext=fontfile='${song}':textfile=${T('e1', '太 平 洋 空 战')}:fontcolor=0xF2D9A0:fontsize=96:x=(w-text_w)/2:y=h*0.34:shadowcolor=black@0.5:shadowx=3:shadowy=3:${fadeA(E - 4.4, E + 1)}`,
-  `drawtext=fontfile='${heiti}':textfile=${T('e2', '浏览器打开即玩  ·  hejun-coderlife.github.io/pacific-dogfight')}:fontcolor=white@0.9:fontsize=34:x=(w-text_w)/2:y=h*0.34+130:${fadeA(E - 3.9, E + 1)}`,
-  `drawtext=fontfile='${heiti}':textfile=${T('e3', '机模 bohmerang / outpiston / waelXcm（Sketchfab）  ·  音效 freesound / Kenney CC0')}:fontcolor=white@0.55:fontsize=20:x=(w-text_w)/2:y=h-50:${fadeA(E - 3.9, E + 1)}`,
-  'fade=t=in:st=0:d=0.8', `fade=t=out:st=${E - 0.8}:d=0.8`,
-].join(',');
-execFileSync('ffmpeg', ['-v', 'error', '-y', '-framerate', '30', '-i', path.join(work, 'frames', 'f%05d.jpg'), '-i', path.join(work, 'audio.wav'),
-  '-vf', vf, '-af', `afade=t=in:st=0:d=0.8,afade=t=out:st=${E - 1.2}:d=1.2`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p',
-  '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-shortest', outFile]);
+// 文字卡：用网页排版（Avenir Next 细体、宽字距）截成透明 PNG，再叠到视频上
+const cards = [['title', 0.6, 4.8], ['0', 9.4, 13.6], ['1', 14.3, 17.7], ['2', 18.6, 30.4], ['3', 35.4, 39.6], ['4', 40.4, 50.4], ['end', 51.6, len + 1]];
+const chrome2 = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', `--remote-debugging-port=${port + 1}`, '--window-size=1920,1080', `--user-data-dir=${work}/profile2`, 'about:blank']);
+for (let k = 0; k < 40; k++) { try { await fetch(`http://127.0.0.1:${port + 1}/json`); break; } catch { await new Promise((r) => setTimeout(r, 500)); } }
+const ws2 = new WebSocket((await (await fetch(`http://127.0.0.1:${port + 1}/json`)).json()).find((t) => t.type === 'page').webSocketDebuggerUrl);
+await new Promise((r) => (ws2.onopen = r));
+let id2 = 0; const pend2 = {};
+ws2.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pend2[m.id]) { pend2[m.id](m.result); delete pend2[m.id]; } };
+const send2 = (method, params = {}) => new Promise((r) => { const i = ++id2; pend2[i] = r; ws2.send(JSON.stringify({ id: i, method, params })); });
+await send2('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+await send2('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
+for (const [k] of cards) {
+  await send2('Page.navigate', { url: 'file://' + path.join(root, 'tools/promo/cards.html') + '?k=' + k });
+  for (let i = 0; i < 40; i++) {   // 等这一张真的排好（标题里带上卡名）
+    const r = await send2('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
+    if (r?.result?.value === 'ready:' + k) break;
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  await new Promise((r) => setTimeout(r, 300));
+  const shot = await send2('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(work, `card_${k}.png`), Buffer.from(shot.data, 'base64'));
+}
+ws2.close(); chrome2.kill();
+const E = len, inputs = ['-framerate', '30', '-i', path.join(work, 'frames', 'f%05d.jpg'), '-i', path.join(work, 'audio.wav')];
+let fc = '', lastV = '0:v';
+cards.forEach(([k, a, b], i) => {
+  inputs.push('-loop', '1', '-framerate', '30', '-t', String(E), '-i', path.join(work, `card_${k}.png`));
+  fc += `[${i + 2}:v]format=rgba,fade=t=in:st=${a}:d=0.7:alpha=1,fade=t=out:st=${Math.min(b, E) - 0.7}:d=0.7:alpha=1[c${i}];[${lastV}][c${i}]overlay=0:0:shortest=1[v${i}];`;
+  lastV = `v${i}`;
+});
+fc += `[${lastV}]fade=t=in:st=0:d=0.8,fade=t=out:st=${E - 0.8}:d=0.8,format=yuv420p[vout]`;
+execFileSync('ffmpeg', ['-v', 'error', '-y', ...inputs, '-filter_complex', fc, '-map', '[vout]', '-map', '1:a',
+  '-af', `afade=t=in:st=0:d=0.8,afade=t=out:st=${E - 1.2}:d=1.2`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '17',
+  '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-t', String(E), outFile]);
 console.log('done', outFile, ((Date.now() - t0) / 1000).toFixed(0), 's');
 ws.close(); process.exit(0);   // 显式退出：WebSocket 不关进程会一直挂着

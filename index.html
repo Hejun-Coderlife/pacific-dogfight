@@ -107,7 +107,7 @@
     <div id="hangar"></div>
     <div class="opts">任务 <span id="mis"><button data-v="free" class="sel">自由空战</button><button data-v="timed">限时歼灭</button><button data-v="escort">护航轰炸机</button><button data-v="defend">保卫航母</button></span></div>
     <div class="opts">起飞 <span id="spm"><button data-v="air" class="sel">空中出发</button><button data-v="deck">航母弹射</button></span></div>
-    <div class="opts">天气 <span id="wx"><button data-v="dusk" class="sel">黄昏</button><button data-v="noon">正午</button><button data-v="overcast">阴天</button><button data-v="storm">暴风雨</button><button data-v="night">夜晚</button></span></div>
+    <div class="opts">天气 <span id="wx"><button data-v="clear">晴天</button><button data-v="dusk" class="sel">黄昏</button><button data-v="noon">正午</button><button data-v="overcast">阴天</button><button data-v="storm">暴风雨</button><button data-v="night">夜晚</button></span></div>
     <div class="opts">难度 <span id="diff"><button data-v="rookie">新兵</button><button data-v="vet" class="sel">老手</button><button data-v="ace">王牌</button></span></div>
     <p class="go">选好机型，点击空白处开始</p>
     <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · G 起落架 · T 弹射 · M 雷达量程 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头（含座舱） · R 重新起飞 · Esc 暂停</p>
@@ -119,7 +119,7 @@
   <p><button id="again">再来一次</button><button id="tohangar">返回机库</button></p>
 </div></div>
 <div id="gfx"></div>
-<div id="credit">机模：bohmerang（10 款战机 + B-2，CC BY-NC-SA）、outpiston（F-117，CC BY-NC-SA）、waelXcm（福特号航母，CC BY）· Sketchfab · 音效 freesound / Kenney CC0</div>
+<div id="credit">机模：bohmerang（10 款战机 + B-2 + 导弹，CC BY-NC-SA）、outpiston（F-117，CC BY-NC-SA）、waelXcm（福特号航母，CC BY）· Sketchfab · 音效 freesound / Kenney CC0</div>
 <div id="ui">
   太阳高度 <input id="sun" type="range" min="1" max="40" step="0.5" value="5"> <span id="sunv">5°</span>
 </div>
@@ -223,10 +223,14 @@ function makeWaterNormals(N = 256) {
 }
 const water = new Water(new THREE.PlaneGeometry(60000, 60000), {
   textureWidth: 512, textureHeight: 512, waterNormals: makeWaterNormals(),
-  sunDirection: new THREE.Vector3(), sunColor: 0xffffff, waterColor: 0x06283a,
+  sunDirection: new THREE.Vector3(), sunColor: 0xffffff, waterColor: 0x0b4a6e,
   distortionScale: 8, fog: true,
 });
 water.material.uniforms.size.value = 0.45;
+// 原 Water 着色器的菲涅尔基础反射率 0.3 太像镜子；真实海水约 0.02，正视时透出水体颜色，掠射时才强反射
+water.material.fragmentShader = water.material.fragmentShader
+  .replace('float rf0 = 0.3;', 'float rf0 = 0.035;')
+  .replace('( sunColor * diffuseLight * 0.3 + scatter )', '( sunColor * diffuseLight * 0.06 + scatter * 1.35 + waterColor * 0.25 )');
 water.rotation.x = -Math.PI / 2;
 scene.add(water);
 
@@ -612,10 +616,11 @@ function updateSun() {
   sunLight.intensity = (1.4 + 2.2 * e) * (1 - 0.55 * (P.cloudDark || 0));
   if (P.night) {   // 夜里由月亮照明，海面反射月光
     const moon = V3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 32), THREE.MathUtils.degToRad(P.sunAzim + 150));
-    sunLight.position.copy(moon).multiplyScalar(1000); sunLight.color.setRGB(0.55, 0.65, 0.95); sunLight.intensity = 0.5;
+    sunLight.position.copy(moon).multiplyScalar(1000); sunLight.color.setRGB(0.55, 0.65, 0.95); sunLight.intensity = 0.6;
     water.material.uniforms.sunDirection.value.copy(moon);
   }
   water.material.uniforms.sunColor.value.copy(sunLight.color);
+  if (P.night) water.material.uniforms.sunColor.value.setRGB(1.6, 1.7, 2.0);   // 海面月光带
   scene.fog.density = P.fogDensity * (P.fogMul || 1);
   hemi.intensity = P.night ? 0.12 : 0.35 * (1 - 0.4 * (P.cloudDark || 0));
 
@@ -627,20 +632,24 @@ function updateSun() {
   envScene.remove(sky); scene.add(sky);
 
   scene.fog.color.setRGB(fogC.x, fogC.y, fogC.z).multiplyScalar(1 - 0.5 * (P.cloudDark || 0));   // 阴雨天雾色压暗，远处的云也跟着变灰
+  if (P.night) scene.fog.color.multiply(C(0x6f8cc8));   // 夜色偏蓝
   cloudMat.uniforms.fogColor.value.copy(scene.fog.color);
   hemi.color.setRGB(fogC.x, fogC.y, fogC.z).multiplyScalar(0.6);
 
   // 云朵颜色：向阳面暖亮，背阴面偏冷灰
   const lum = Math.max(0.05, 0.3 * fogC.x + 0.59 * fogC.y + 0.11 * fogC.z);
-  const lit = sunLight.color.clone().multiplyScalar(lum * 2.1);
-  const shade = new THREE.Color(fogC.x, fogC.y, fogC.z).multiplyScalar(0.42).lerp(C(0x4a5068).multiplyScalar(lum * 1.4), 0.4);
+  const lit = P.night ? new THREE.Color(0.5, 0.56, 0.75) : sunLight.color.clone().multiplyScalar(lum * 2.1);
+  const shade = P.night ? new THREE.Color(0.06, 0.07, 0.11) : new THREE.Color(fogC.x, fogC.y, fogC.z).multiplyScalar(0.42).lerp(C(0x4a5068).multiplyScalar(lum * 1.4), 0.4);
   const arr = cloudGeo.attributes.iColor.array, c = new THREE.Color();
   puffs.forEach((p, i) => {
     const k = THREE.MathUtils.clamp(-0.1 + 0.6 * (0.5 + 0.5 * p.side.dot(sunDir)) + 0.6 * p.oy01, 0, 1);
-    c.copy(shade).lerp(lit, k).multiplyScalar(1 - (P.cloudDark || 0)); arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
+    c.copy(shade).lerp(lit, k);
+    const gray = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b; c.lerp(_gray.setRGB(gray, gray, gray * 1.05), P.cloudDark || 0);   // 阴雨天的云去色发灰
+    c.multiplyScalar(1 - (P.cloudDark || 0)); arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
   });
   cloudGeo.attributes.iColor.needsUpdate = true;
 }
+const _gray = new THREE.Color();
 updateSun();
 
 // ---------- 后期 ----------
@@ -1251,12 +1260,15 @@ function aircraftFx(ac, dt) {
     pm.material.uniforms.uI.value = 0.35 + 0.65 * ab; pm.material.uniforms.uLen.value = len;
   }
   const lvl = ac.onFire || ac.exploded ? 2 : ac.engineDead ? 1.6 : ac.hp.engine < HP0.engine * 0.6 ? 1 : 0;
-  if (lvl && ac.trailAcc > (lvl > 1.5 ? 1.6 : 4)) {
-    ac.trailAcc = 0;
-    const dark = lvl > 1.5, ep = ac.mesh.localToWorld(_pp.set(0, 0, -0.45 * L));
+  const spacing = lvl > 1.5 ? 1.6 : 4, travel = st.V * dt;
+  if (lvl) for (let n = 0; ac.trailAcc > spacing && n < 30; n++) {
+    // 沿这一帧飞过的路径补烟，高速时也连成一条烟带
+    ac.trailAcc -= spacing;
+    const dark = lvl > 1.5, ep = ac.mesh.localToWorld(_pp.set(0, 0, -0.45 * L)).addScaledVector(st.vel, -dt * (ac.trailAcc / Math.max(travel, 1e-3)));
     if (dark) smokeFx.emit(ep, _vv.copy(st.vel).multiplyScalar(0.25), rand(6, 10), 2.2, rand(13, 19), 0.02, 0.02, 0.02, 1.0, -0.03, 1.4, 1);
     else smokeFx.emit(ep, _vv.copy(st.vel).multiplyScalar(0.25), rand(4, 7), 1.2, rand(7, 10), 0.4, 0.4, 0.42, 0.45, -0.03, 1.4, 1);
   }
+  if (!lvl) ac.trailAcc = 0;
   if (ac.onFire) for (let i = 0; i < 2; i++)
     glowFx.emit(ac.mesh.localToWorld(_pp.set(rand(-1, 1), rand(-0.3, 0.4), -0.35 * L + rand(-1.5, 1.5))),
       _vv.copy(st.vel).multiplyScalar(0.82).add(rr(3)), rand(0.25, 0.45), rand(1, 1.6), rand(2.5, 4), 9, 3.6, 1.1, 1, -0.2, 0, 0.25);
@@ -1381,7 +1393,13 @@ const MSL = (() => {
     white: new THREE.MeshStandardMaterial({ color: 0xdedede, metalness: 0.4, roughness: 0.4 }),
     dark: new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.5, roughness: 0.5 }) };
 })();
-function missileMesh() {
+function missileMesh(owner) {
+  const id = owner === player ? 'AIM-9' : 'R-77';
+  if (jetGLTF[id]) {   // 真实弹体（bohmerang 导弹合集），尾部挂一束发动机火焰
+    const g = jetMesh(id), pm = makePlume(); pm.position.z = id === 'AIM-9' ? -1.5 : -1.8; pm.scale.set(0.11, 0.11, 3.5);
+    pm.material.uniforms.uI.value = 1; pm.material.uniforms.uLen.value = 3; g.add(pm); g.userData.plume = pm;
+    return g;
+  }
   const g = new THREE.Group();
   for (const [geo, mat] of [[MSL.body, MSL.white], [MSL.nose, MSL.dark], [MSL.finA, MSL.dark], [MSL.finB, MSL.dark]]) {
     const m = new THREE.Mesh(geo, mat); m.userData.shared = true; g.add(m);
@@ -1431,7 +1449,7 @@ function launchMissile(ac, tgt) {
     if (!s.ready) continue;
     ac.nextSlot = (ac.slots.indexOf(s) + 1) % ac.slots.length;
     s.ready = false; s.reload = 5;
-    const m = missileMesh(); m.scale.setScalar(1.7);
+    const m = missileMesh(ac); if (!m.userData.plume) m.scale.setScalar(1.7);
     const p = ac.mesh.localToWorld(s.local.clone());
     m.position.copy(p); scene.add(m);
     const fwd = V3().set(0, 0, 1).applyQuaternion(ac.st.q);
@@ -1466,10 +1484,18 @@ function updateMissiles(dt) {
     if (!burning) m.vel.y -= 9.81 * dt;
     m.pos.addScaledVector(m.vel, dt);
     m.mesh.position.copy(m.pos); m.mesh.lookAt(_b.copy(m.pos).add(m.vel));
+    if (m.mesh.userData.plume) m.mesh.userData.plume.visible = burning;
     // 尾焰 + 白烟
     if (burning) {
-      glowFx.emit(m.mesh.localToWorld(_c.set(0, 0, -1.1)), _b.copy(m.vel).multiplyScalar(0.6), 0.08, 0.9, 0.4, 9, 6, 3, 1, 0, 0, 0.5);
-      if ((m.trail += ns * dt) > 3) { m.trail = 0; smokeFx.emit(m.mesh.localToWorld(_c.set(0, 0, -1.2)), ZERO, rand(3, 5), 0.6, rand(4, 7), 1.5, 1.5, 1.55, 0.55, -0.01, 0, 1); }
+      const tail = m.mesh.localToWorld(_c.set(0, 0, -1.9));
+      glowFx.emit(tail, _b.copy(m.vel).multiplyScalar(0.95), 0.05, 0.7, 0.35, 9, 7, 4, 1, 0, 0, 0.5);
+      // 烟迹：密、粗、留得久，慢慢膨胀散开并带一点随机飘移
+      // 导弹每帧飞几十米：沿这一帧的路径每 2 米补一团烟，连成连续的烟带
+      const seg = ns * dt; m.trail += seg;
+      for (let n = 0; m.trail > 2 && n < 40; n++) {
+        m.trail -= 2;
+        smokeFx.emit(_pp.copy(tail).addScaledVector(m.vel, -dt * (m.trail / seg)), rr(1.2), rand(7, 11), 0.9, rand(8, 13), 1.55, 1.55, 1.6, 0.55, -0.015, 0.4, 1);
+      }
     }
     // 近炸：本帧弹道段（按相对速度）离任意敌机 < 9 米
     let boom = null;
@@ -1859,11 +1885,24 @@ function deckH(x, z) {
   const h = D.h[i][j];
   return h === null ? -Infinity : CARRIER.pos.y + h;
 }
+const PARKED = [['FA-18F', -150], ['F-14', -128], ['FA-18F', -42], ['F-35', -20], ['FA-18F', 2], ['F-35', 24], ['F-14', 46]];
+let deckPopulated = false;
+function populateDeck() {
+  if (deckPopulated || !CARRIER.mesh || !PARKED.every(([id]) => jetGLTF[id])) return;
+  deckPopulated = true;
+  for (const [id, lz] of PARKED) {
+    const m = jetMesh(id), j = JETS[id];
+    m.position.set(-31 + (id === 'F-14' ? -2 : 0), -6 + j.len * 0.11, lz);   // 甲板（舰体局部坐标，甲板面在 y=-6）
+    m.rotation.y = 0.8;   // 机头斜向甲板中线、略朝舰首
+    CARRIER.mesh.add(m);
+  }
+}
 function placeCarrier() {
   if (CARRIER.mesh || !jetGLTF['CVN-78']) return;
   CARRIER.mesh = jetMesh('CVN-78');
   CARRIER.mesh.position.copy(CARRIER.pos); CARRIER.mesh.rotation.y = CARRIER.heading;
   scene.add(CARRIER.mesh);
+  populateDeck();
 }
 const CARRIER_FWD = () => V3().set(Math.sin(CARRIER.heading), 0, Math.cos(CARRIER.heading));
 const DECK_Y = () => CARRIER.pos.y - 6.0;
@@ -2097,11 +2136,12 @@ function drawRadar() {
 // ---------- 天气 / 昼夜 ----------
 // sun 太阳高度°，turb/ray 天空散射，fogMul 雾浓度倍数，exp 曝光，dark 云变暗比例，rain 雨量，storm 闪电+乱流，night 月光+星空
 const WEATHER = {
+  clear:    { cn: '晴天',   sun: 42, turb: 2, ray: 1, fogMul: 0.3, exp: 0.62, dark: 0,  rain: 0, mie: 0.003, dome: true },
   dusk:     { cn: '黄昏',   sun: 5,  turb: 8,  ray: 2.2, fogMul: 1,   exp: 0.55, dark: 0,    rain: 0 },
   noon:     { cn: '正午',   sun: 58, turb: 3,  ray: 1.0, fogMul: 0.7, exp: 0.4,  dark: 0,    rain: 0 },
-  overcast: { cn: '阴天',   sun: 28, turb: 18, ray: 3.5, fogMul: 2.4, exp: 0.48, dark: 0.5,  rain: 0 },
-  storm:    { cn: '暴风雨', sun: 14, turb: 20, ray: 4,   fogMul: 3.6, exp: 0.4,  dark: 0.72, rain: 1, storm: true },
-  night:    { cn: '夜晚',   sun: -8, turb: 2,  ray: 1.0, fogMul: 1.1, exp: 1.6,  dark: 0.2,  rain: 0, night: true },
+  overcast: { cn: '阴天',   sun: 28, turb: 12, ray: 1.0, mie: 0.015, fogMul: 2.4, exp: 0.48, dark: 0.5,  rain: 0 },
+  storm:    { cn: '暴风雨', sun: 32, turb: 12, ray: 0.6, fogMul: 3.6, exp: 0.33, mie: 0.02,  dark: 0.72, rain: 1, storm: true },
+  night:    { cn: '夜晚',   sun: -10, turb: 1.2, ray: 3.2, fogMul: 1.1, exp: 1.25, dark: 0.2,  rain: 0, night: true },
 };
 let weather = 'dusk';
 // 星空：夜里才显示，跟着镜头
@@ -2116,14 +2156,63 @@ const stars = (() => {
   pts.frustumCulled = false; scene.add(pts);
   return pts;
 })();
+// 月亮：贴在天空方向上的发光圆盘（光照/海面月光带在 updateSun 里用同一个方向）
+const moonDir = () => _w2.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 32), THREE.MathUtils.degToRad(P.sunAzim + 150));
+const _w2 = V3();
+const moon = new THREE.Mesh(new THREE.CircleGeometry(170, 48), new THREE.MeshBasicMaterial({ map: glowTexture(), color: new THREE.Color(3.2, 3.3, 3.6), transparent: true, fog: false, depthWrite: false }));
+moon.visible = false; moon.renderOrder = -1; scene.add(moon);
+// 夜空：地平线深蓝、头顶近黑的渐变穹顶，夜里替代散射天空
+const NIGHT_HORIZON = new THREE.Color(0.035, 0.06, 0.13), NIGHT_ZENITH = new THREE.Color(0.004, 0.007, 0.02);
+const DAY_HORIZON = new THREE.Color(0.62, 0.8, 1.05), DAY_ZENITH = new THREE.Color(0.07, 0.24, 0.72);
+const nightSky = new THREE.Mesh(new THREE.SphereGeometry(9800, 32, 16), new THREE.ShaderMaterial({
+  uniforms: { uH: { value: NIGHT_HORIZON.clone() }, uZ: { value: NIGHT_ZENITH.clone() }, uSun: { value: new THREE.Vector3() }, uSunK: { value: 0 } },
+  vertexShader: 'varying vec3 vD; void main() { vD = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
+  fragmentShader: `uniform vec3 uH; uniform vec3 uZ; uniform vec3 uSun; uniform float uSunK; varying vec3 vD;
+    void main() {
+      float k = pow(clamp(vD.y, 0.0, 1.0), 0.45);
+      vec3 c = mix(uH, uZ, k);
+      float s = max(dot(normalize(vD), uSun), 0.0);
+      c += uSunK * (vec3(30.0, 28.0, 24.0) * pow(s, 2200.0) + vec3(1.2, 1.1, 0.9) * pow(s, 60.0) * 0.6 + vec3(0.5, 0.5, 0.45) * pow(s, 6.0) * 0.25);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  side: THREE.BackSide, depthWrite: false, fog: false }));
+nightSky.renderOrder = -3; nightSky.visible = false; nightSky.frustumCulled = false; scene.add(nightSky);
 // 雨：镜头周围一个盒子里循环的雨丝，方向 = 下落速度 − 飞机速度
-const RAIN_N = 4000, RAIN_BOX = 110;
-const rainPos = new Float32Array(RAIN_N * 3), rainLine = new Float32Array(RAIN_N * 6);
-for (let i = 0; i < RAIN_N; i++) rainPos.set([(Math.random() - 0.5) * RAIN_BOX, (Math.random() - 0.5) * RAIN_BOX, (Math.random() - 0.5) * RAIN_BOX], i * 3);
-const rainGeo = new THREE.BufferGeometry();
-rainGeo.setAttribute('position', new THREE.BufferAttribute(rainLine, 3).setUsage(THREE.DynamicDrawUsage));
-const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: new THREE.Color(1.2, 1.3, 1.4), transparent: true, opacity: 0.4, fog: false, depthWrite: false }));
-rain.frustumCulled = false; rain.visible = false; scene.add(rain);
+const RAIN_N = 4500, RAIN_BOX = 90;
+const rainPos = new Float32Array(RAIN_N * 3), rainSeed = new Float32Array(RAIN_N);
+for (let i = 0; i < RAIN_N; i++) { rainPos.set([(Math.random() - 0.5) * RAIN_BOX, (Math.random() - 0.5) * RAIN_BOX, (Math.random() - 0.5) * RAIN_BOX], i * 3); rainSeed[i] = Math.random(); }
+const rainGeo = new THREE.InstancedBufferGeometry();
+{ const pg = new THREE.PlaneGeometry(1, 1); rainGeo.index = pg.index; rainGeo.setAttribute('position', pg.attributes.position); rainGeo.setAttribute('uv', pg.attributes.uv); }
+rainGeo.setAttribute('iP', new THREE.InstancedBufferAttribute(rainPos, 3).setUsage(THREE.DynamicDrawUsage));
+rainGeo.setAttribute('iS', new THREE.InstancedBufferAttribute(rainSeed, 1));
+rainGeo.instanceCount = RAIN_N;
+const rain = new THREE.Mesh(rainGeo, new THREE.ShaderMaterial({
+  uniforms: { uCam: { value: new THREE.Vector3() }, uStreak: { value: new THREE.Vector3(0, -1, 0) }, uRes: { value: 1080 } },
+  vertexShader: `
+    attribute vec3 iP; attribute float iS; uniform vec3 uCam; uniform vec3 uStreak; uniform float uRes;
+    varying vec2 vUv; varying float vA;
+    void main() {
+      vec3 head = uCam + iP, tail = head - uStreak * (0.7 + 0.6 * iS);
+      vec4 a = viewMatrix * vec4(head, 1.0), b = viewMatrix * vec4(tail, 1.0);
+      vec4 p = mix(a, b, position.y + 0.5);
+      vec2 d = normalize((b.xy / max(-b.z, 0.1)) - (a.xy / max(-a.z, 0.1)) + 1e-5);
+      float w = max(0.02, -p.z * 2.2 / uRes);
+      p.xy += vec2(-d.y, d.x) * position.x * w;
+      vUv = uv; vA = smoothstep(2.0, 6.0, -p.z) * (1.0 - smoothstep(25.0, 45.0, -p.z));
+      gl_Position = projectionMatrix * p;
+    }`,
+  fragmentShader: `
+    varying vec2 vUv; varying float vA;
+    void main() {
+      float across = 1.0 - abs(vUv.x * 2.0 - 1.0);
+      float a = across * (1.0 - vUv.y) * vA * 0.6;
+      gl_FragColor = vec4(vec3(1.1, 1.15, 1.25), a);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  transparent: true, depthWrite: false, side: THREE.DoubleSide,
+}));
+rain.frustumCulled = false; rain.visible = false; rain.renderOrder = 6; scene.add(rain);
 // 闪电：一道折线 + 全场闪亮，雷声按距离延迟
 const boltGeo = new THREE.BufferGeometry();
 boltGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(40 * 3), 3));
@@ -2134,28 +2223,43 @@ function applyWeather(id) {
   weather = id;
   const W = WEATHER[id];
   P.sunElev = W.sun; P.night = !!W.night; P.fogMul = W.fogMul; P.cloudDark = W.dark;
-  su.turbidity.value = W.turb; su.rayleigh.value = W.ray;
+  su.turbidity.value = W.turb; su.rayleigh.value = W.ray; su.mieCoefficient.value = W.mie || 0.006;
   sunInput.value = Math.max(1, W.sun); sunV.textContent = W.sun + '°';
   $('ui').style.display = W.night || W.storm || id === 'overcast' ? 'none' : '';
+  sky.visible = true;   // 采样雾色/环境光前天空必须可见（上一个天气可能把它藏了）
   updateSun(); updateSmokeTint();
   for (const m of [cloudMat, smokeFx.mat, glowFx.mat]) m.uniforms.fogDensity.value = scene.fog.density;
-  stars.material.opacity = W.night ? 1 : 0;
+  const dome = W.night || W.dome;
+  stars.material.opacity = W.night ? 1 : 0; moon.visible = !!W.night; nightSky.visible = !!dome; sky.visible = !dome;
+  if (dome) {
+    const U = nightSky.material.uniforms;
+    U.uH.value.copy(W.night ? NIGHT_HORIZON : DAY_HORIZON); U.uZ.value.copy(W.night ? NIGHT_ZENITH : DAY_ZENITH);
+    U.uSun.value.copy(sunDir); U.uSunK.value = W.night ? 0 : 1;
+    // 环境光照、海面倒影的天空也换成这个穹顶
+    scene.remove(nightSky); envScene.add(nightSky); nightSky.position.set(0, 0, 0);
+    if (envRT) envRT.dispose(); envRT = pmrem.fromScene(envScene); scene.environment = envRT.texture;
+    envScene.remove(nightSky); scene.add(nightSky);
+    scene.fog.color.copy(U.uH.value).multiplyScalar(W.night ? 1.4 : 0.85);
+    for (const m of [cloudMat, smokeFx.mat, glowFx.mat]) m.uniforms.fogColor.value = scene.fog.color;
+  }
   rain.visible = W.rain > 0;
   water.material.uniforms.distortionScale.value = W.storm ? 14 : 8;
+  rain.material.uniforms.uRes.value = innerHeight;
 }
 function updateWeather(dt) {
   const W = WEATHER[weather];
-  stars.position.copy(camera.position);
+  stars.position.copy(camera.position); nightSky.position.copy(camera.position);
+  if (moon.visible) { moon.position.copy(camera.position).addScaledVector(moonDir(), 8500); moon.lookAt(camera.position); }
   if (rain.visible) {
-    const rel = _w1.set(0, -32, 0).sub(player.st.vel).multiplyScalar(dt), cp = camera.position, h = RAIN_BOX / 2;
-    for (let i = 0; i < RAIN_N; i++) {
-      let x = rainPos[i * 3] + rel.x, y = rainPos[i * 3 + 1] + rel.y, z = rainPos[i * 3 + 2] + rel.z;
-      x = ((x + h) % RAIN_BOX + RAIN_BOX) % RAIN_BOX - h; y = ((y + h) % RAIN_BOX + RAIN_BOX) % RAIN_BOX - h; z = ((z + h) % RAIN_BOX + RAIN_BOX) % RAIN_BOX - h;
-      rainPos[i * 3] = x; rainPos[i * 3 + 1] = y; rainPos[i * 3 + 2] = z;
-      const sx = rel.x / Math.max(dt, 1e-3) * 0.014, sy = rel.y / Math.max(dt, 1e-3) * 0.014, sz = rel.z / Math.max(dt, 1e-3) * 0.014;
-      rainLine.set([cp.x + x, cp.y + y, cp.z + z, cp.x + x - sx, cp.y + y - sy, cp.z + z - sz], i * 6);
+    // 雨点相对镜头的运动 = 下落速度 − 飞机速度；拖影长度按 1/50 秒快门算
+    const relV = _w1.set(0, -9, 0).sub(player.st.vel), h = RAIN_BOX / 2;
+    for (let i = 0; i < RAIN_N; i++) for (let k = 0; k < 3; k++) {
+      const v = rainPos[i * 3 + k] + relV.getComponent(k) * dt;
+      rainPos[i * 3 + k] = ((v + h) % RAIN_BOX + RAIN_BOX) % RAIN_BOX - h;
     }
-    rainGeo.attributes.position.needsUpdate = true;
+    rain.material.uniforms.uCam.value.copy(camera.position);
+    rain.material.uniforms.uStreak.value.copy(relV).multiplyScalar(0.007).clampLength(0.3, 2.2);   // 1/140 秒快门的拖影
+    rainGeo.attributes.iP.needsUpdate = true;
   }
   if (W.storm) {
     // 乱流：给玩家一点随机角速度
@@ -2205,13 +2309,14 @@ markHangar();
 async function boot() {
   // 先加载玩家机和 3 种敌机，其余机型在后台慢慢加载
   const others = JET_IDS.filter((id) => id !== playerType).sort(() => Math.random() - 0.5);
-  await Promise.all([playerType, ...others.slice(0, 3), 'CVN-78', 'B-2'].map(loadJet));
+  await Promise.all([playerType, ...others.slice(0, 3), 'CVN-78', 'B-2', 'AIM-9', 'R-77'].map(loadJet));
   placeCarrier();
   startMission();
   booted = true;
   const l = $('loading'); l.style.opacity = 0; setTimeout(() => l.remove(), 1000);
   /*SELFTEST*/
-  for (const id of others.slice(3)) { await new Promise((r) => setTimeout(r, 400)); await loadJet(id); }
+  for (const id of others.slice(3)) { await new Promise((r) => setTimeout(r, 400)); await loadJet(id); populateDeck(); }
+  await Promise.all(['FA-18F', 'F-14', 'F-35'].map(loadJet)); populateDeck();
 }
 boot();
 const clock = new THREE.Clock();

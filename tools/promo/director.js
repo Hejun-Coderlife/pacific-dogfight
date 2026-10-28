@@ -6,7 +6,7 @@
   const L = document.getElementById('loading'); if (L) L.remove();
   renderer.setPixelRatio(1); renderer.setSize(1920, 1080); composer.setSize(1920, 1080); bloom.setSize(960, 540);
   camera.aspect = 1920 / 1080; camera.fov = 45; camera.near = 1; camera.updateProjectionMatrix();
-  await Promise.all(['Su-57', 'MiG-29', 'FA-18F', 'F-16'].map(loadJet));
+  await Promise.all(['Su-57', 'MiG-29', 'FA-18F', 'F-16', 'F-14', 'F-35'].map(loadJet)); populateDeck();
 
   // ---- 音频事件（离线合成用）----
   const EV = [];
@@ -90,7 +90,7 @@
   const shot = (dur, setup, update) => S.push({ dur, setup, update });
 
   // 1 黄昏海面，贴水飞向逆光火山岛（片名）
-  shot(5, () => { clearAll(); applyWeather('dusk'); updateIslands(V3().set(1500, 0, 0), true); fov(42); beds.push({ k: 'calm' }); }, (t) => {
+  shot(5, () => { clearAll(); applyWeather('clear'); updateIslands(V3().set(1500, 0, 0), true); fov(42); beds.push({ k: 'calm' }); }, (t) => {
     const k = t / 5;
     look(V3().set(1300 - 120 * k, 9 + 22 * ease(k), -1800 + 380 * t), V3().set(ISL.x, 260, ISL.z));
   });
@@ -153,8 +153,9 @@
     if (MS) {
       const d = MS.pos.distanceTo(B.st.pos);
       slow = d < 350 ? 0.25 : 1;
+      // 侧面跟拍：导弹侧影、尾焰和身后拖出的烟迹都在画面里
       const mv = MS.vel.clone().normalize(), side = V3().crossVectors(mv, UP).normalize();
-      look(MS.pos.clone().addScaledVector(mv, -14).addScaledVector(UP, 2.5).addScaledVector(side, 3), MS.pos.clone().addScaledVector(mv, 60));
+      look(MS.pos.clone().addScaledVector(side, 9).addScaledVector(UP, 1.8).addScaledVector(mv, -3), MS.pos.clone().addScaledVector(mv, 7));
     } else if (t <= 0.5) {
       const f = V3().set(0, 0, 1).applyQuaternion(A.st.q);
       look(A.st.pos.clone().addScaledVector(f, -22).addScaledVector(UP, 5), A.st.pos.clone().addScaledVector(f, 60));
@@ -203,20 +204,24 @@
     if (nextBolt > 3) nextBolt = 2.2;
     look(chase(A, 34 - t * 2, 7, -12), A.st.pos.clone().addScaledVector(A.st.vel, 0.12));
   });
-  // 10 夜晚：月光海面上两道加力火焰
+  // 10 夜晚：镜头望向月亮，两架战机拖着加力火焰从月下掠过，海面上是月光带
+  let NC, ND;
   shot(5, () => {
-    clearAll(); applyWeather('night'); A = mk('F-22', true); B = mk('Su-57'); fov(42);
-    beds.push({ k: 'night' });
+    clearAll(); applyWeather('night'); A = mk('F-22', true); B = mk('Su-57'); fov(44);
+    const md = moonDir().clone().setY(0).normalize();
+    NC = V3().set(9000, 45, -3000); ND = md;
   }, (t) => {
-    const pathA = (u) => V3().set(9000 - 300 * u, 140 + (u > 2.6 ? (u - 2.6) ** 2 * 45 : 0), -3000);
-    const pathB = (u) => V3().set(9000 - 300 * u + 70, 120 + (u > 2.9 ? (u - 2.9) ** 2 * 45 : 0), -3000 + 40);
+    const side = V3().crossVectors(ND, UP).normalize();   // 从左往右横穿画面
+    const base = NC.clone().addScaledVector(ND, 150);
+    const pathA = (u) => base.clone().addScaledVector(side, -330 + 150 * u).add(V3().set(0, 70 + 6 * u, 0));
+    const pathB = (u) => base.clone().addScaledVector(ND, 30).addScaledVector(side, -365 + 150 * u).add(V3().set(0, 58 + 6 * u, 0));
     fly(A, pathA, t, 1); fly(B, pathB, t, 1);
-    look(V3().set(9000 - 300 * 2.3 - 190 * Math.max(0, t - 2.3), 40 + 20 * Math.max(0, t - 2.3), -3000 + 95), lerpV(A.st.pos, B.st.pos, 0.5));
-    if (Math.abs(t - 1.4) < DT / 2) ev('flyby', 1.1, A.st.pos, 0.9);
+    look(NC, NC.clone().addScaledVector(ND, 500).addScaledVector(side, 40 * (t - 2.2)).add(V3().set(0, 190, 0)));
+    if (Math.abs(t - 1.6) < DT / 2) ev('flyby', 1.0, A.st.pos, 0.9);
   });
-  // 11 夕阳中拉起远去（片尾）
+  // 11 蓝天里拉起远去（片尾）
   shot(5, () => {
-    clearAll(); applyWeather('dusk'); A = mk('F-22', true); fov(40);
+    clearAll(); applyWeather('clear'); A = mk('F-22', true); fov(40);
     beds.push({ k: 'calm' });
   }, (t) => {
     const sun = V3().set(Math.sin(8 / 57.3), 0, Math.cos(8 / 57.3));
