@@ -803,6 +803,23 @@ function glowTexture() {
   g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(cv);
 }
+// 火焰贴图：带翻滚细节的一团，边缘严格淡到 0（不然加色叠出来是方块）
+function fireTexture() {
+  const N = 128, cv = document.createElement('canvas'); cv.width = cv.height = N;
+  const g = cv.getContext('2d'), img = g.createImageData(N, N), rnd = mulberry32(31);
+  const H = []; for (let i = 0; i < 4; i++) { const a = []; for (let j = 0; j < 17 * 17; j++) a.push(rnd()); H.push(a); }
+  const vn = (x, y, o) => { const s = 4 << o, X = x * s, Y = y * s, xi = Math.floor(X), yi = Math.floor(Y), xf = X - xi, yf = Y - yi, h = H[o],
+    at = (i, j) => h[((j % 16) * 17 + (i % 16))], u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    return at(xi, yi) * (1 - u) * (1 - v) + at(xi + 1, yi) * u * (1 - v) + at(xi, yi + 1) * (1 - u) * v + at(xi + 1, yi + 1) * u * v; };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N, r = Math.hypot(u - 0.5, v - 0.5) * 2;
+    const n = vn(u, v, 0) * 0.5 + vn(u, v, 1) * 0.3 + vn(u, v, 2) * 0.2;
+    const a = Math.max(0, 1 - r) ** 1.5 * Math.min(1, Math.max(0, (n - 0.25) * 2.2 + (1 - r) * 0.6));
+    const o = (y * N + x) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = 255; img.data[o + 3] = Math.min(255, a * 255);
+  }
+  g.putImageData(img, 0, 0);
+  return new THREE.CanvasTexture(cv);
+}
 const particleVert = `
   attribute vec3 aP; attribute vec3 aV; attribute vec4 aT; attribute vec4 aC; attribute vec4 aX;
   uniform float uTime;
@@ -886,6 +903,8 @@ class Particles {
 }
 const smokeFx = new Particles(6000, false, cloudMat.uniforms.map.value);
 const glowFx = new Particles(3000, true, glowTexture());
+const fireFx = new Particles(3000, true, fireTexture());   // 火焰：加色混合 + 翻滚云团贴图，火球才有菜花状的细节
+const fireDebris = [];   // 爆炸甩出去的燃烧碎块：一路拖着火和黑烟往下坠
 const flash = new THREE.PointLight(0xffaa55, 0, 700, 1.6);
 scene.add(flash);
 function updateSmokeTint() {
@@ -899,11 +918,37 @@ function fxSparks(p, baseV) {
   smokeFx.emit(p, _vv.copy(baseV).multiplyScalar(0.9), 1.0, 0.6, 3.5, 0.4, 0.4, 0.42, 0.5, 0, 1.5, 1);
 }
 function fxExplosion(p, v, k = 1) {
-  for (let i = 0; i < 26; i++) glowFx.emit(p, _vv.copy(v).multiplyScalar(0.4).add(rr(28 * k)), rand(0.5, 1.1), 3 * k, rand(10, 16) * k, 10, 4.2, 1.3, 1, -0.05, 2.2, 0.12);
-  for (let i = 0; i < 18; i++) smokeFx.emit(p, _vv.copy(v).multiplyScalar(0.3).add(rr(14 * k)), rand(5, 9), 5 * k, rand(20, 30) * k, 0.06, 0.055, 0.05, 0.75, -0.02, 1.2, 1);
-  for (let i = 0; i < 30 * k; i++) glowFx.emit(p, _vv.copy(v).multiplyScalar(0.5).add(rr(70)), rand(0.8, 2), 0.5, 0.2, 7, 3.5, 1.2, 1, 1.0, 0.3, 0.4);
+  // 1 瞬间的白热闪光
+  for (let i = 0; i < 6; i++) glowFx.emit(p, _vv.copy(v).multiplyScalar(0.5).add(rr(6 * k)), rand(0.08, 0.16), 5 * k, rand(16, 22) * k, 6, 4.5, 2.5, 1, 0, 0, 0.3);
+  // 2 翻滚的火球：中心黄白、外圈橙红，迅速膨胀后减速、熄灭成烟
+  for (let i = 0; i < 46; i++) {
+    const hot = Math.random();
+    fireFx.emit(p, _vv.copy(v).multiplyScalar(0.35).add(rr(24 * k)), rand(0.6, 1.5), rand(2.5, 4.5) * k, rand(11, 20) * k,
+      3.2 + 1.6 * hot, 1.1 + 1.2 * hot, 0.25 + 0.4 * hot, 0.9, -0.4, 2.6, 0.05);
+  }
+  // 3 裹着火球往外翻、久久不散的黑烟
+  for (let i = 0; i < 34; i++) smokeFx.emit(p, _vv.copy(v).multiplyScalar(0.3).add(rr(16 * k)), rand(5, 9), rand(4, 7) * k, rand(24, 38) * k, 0.05, 0.045, 0.04, 0.85, -0.04, 1.6, 1);
+  // 4 四散的火星
+  for (let i = 0; i < 70 * k; i++) glowFx.emit(p, _vv.copy(v).multiplyScalar(0.5).add(rr(90)), rand(0.8, 2.2), 0.45, 0.15, 9, 4, 1.2, 1, 1.0, 0.25, 0.4);
+  // 5 拖着火和黑烟坠落的燃烧碎块
+  for (let i = 0; i < Math.round(7 * k); i++) fireDebris.push({ p: p.clone(), v: v.clone().multiplyScalar(0.55).add(rr(55)).add(V3().set(0, rand(5, 25), 0)), life: rand(1.6, 3.2), acc: 0 });
   flash.position.copy(p); flash.intensity = Math.max(flash.intensity, 4e5 * k);
   sfxBoom(p, k);
+}
+function updateFireDebris(dt) {
+  for (let i = fireDebris.length - 1; i >= 0; i--) {
+    const d = fireDebris[i];
+    d.v.y -= 9.81 * dt; d.v.multiplyScalar(1 - 0.6 * dt);
+    const step = d.v.length() * dt; d.acc += step;
+    for (let n = 0; d.acc > 1.8 && n < 12; n++) {   // 沿轨迹每 1.8 米补一团，连成烟带
+      d.acc -= 1.8;
+      const q = _pp.copy(d.p).addScaledVector(d.v, -dt * (d.acc / Math.max(step, 1e-3))), f = Math.min(1, d.life / 1.5);
+      fireFx.emit(q, rr(1), rand(0.25, 0.5), 1.2 * f + 0.3, 2.6 * f + 0.5, 4, 1.5, 0.4, f, -0.2, 0.5, 0.1);
+      smokeFx.emit(q, rr(0.8), rand(3, 6), 1.2, rand(5, 8), 0.07, 0.065, 0.06, 0.7, -0.03, 0.6, 1);
+    }
+    d.p.addScaledVector(d.v, dt);
+    if ((d.life -= dt) <= 0 || d.p.y < groundH(d.p.x, d.p.z)) fireDebris.splice(i, 1);
+  }
 }
 function fxSplash(p, k = 1) {
   for (let i = 0; i < 50 * k; i++)
@@ -937,6 +982,44 @@ const JETS = {
   'F-117':  { cn: 'F-117 夜鹰',   len: 20.1, span: 12.9, mass: 18000, S: 84,   T: 150000, nx: 1.3,  g: 7,   aStall: 0.38, roll: 3.0, noAB: true , vSL: 1040, vAlt: 980 },
 };
 const JET_IDS = Object.keys(JETS);
+// 机身旧化：真实战机的蒙皮有顺气流方向的油污雨痕、深浅不一的斑驳、尾部发动机的烟熏和喷口的高温变色，
+// 哑光漆和磨亮的地方反光不同。模型坐标就是机身米制坐标（机头 -Z），按机长换算到前后位置。
+function weatherJet(g, len) {
+  g.scene.traverse((n) => {
+    if (!n.isMesh) return;
+    for (const m of Array.isArray(n.material) ? n.material : [n.material]) {
+      if (!m || m.userData.weathered || m.transparent || /glass|canopy|hud|light/i.test(m.name || '')) continue;
+      m.userData.weathered = true;
+      m.onBeforeCompile = (sh) => {
+        sh.uniforms.uLen = { value: len };
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLp;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLp = position;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+          varying vec3 vLp; uniform float uLen; float wGrime, wBlot;
+          float wh(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+          float wn(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(mix(wh(i), wh(i + vec3(1,0,0)), f.x), mix(wh(i + vec3(0,1,0)), wh(i + vec3(1,1,0)), f.x), f.y),
+                       mix(mix(wh(i + vec3(0,0,1)), wh(i + vec3(1,0,1)), f.x), mix(wh(i + vec3(0,1,1)), wh(i + vec3(1,1,1)), f.x), f.y), f.z); }`)
+          .replace('#include <map_fragment>', `#include <map_fragment>
+          {
+            float z = vLp.z / uLen;   // 机头 -0.5 … 机尾 +0.5
+            float streak = wn(vec3(vLp.x * 9.0, vLp.y * 9.0, vLp.z * 0.28)) * 0.6 + wn(vec3(vLp.x * 26.0, vLp.y * 26.0, vLp.z * 0.7)) * 0.4;   // 顺气流拉长的雨痕
+            wBlot = wn(vLp * 1.4) * 0.55 + wn(vLp * 4.5) * 0.3 + wn(vLp * 16.0) * 0.15;
+            wGrime = smoothstep(0.5, 0.85, streak * 0.75 + wBlot * 0.25);
+            float under = smoothstep(0.1, -0.6, vLp.y);   // 机腹更脏
+            float soot = smoothstep(0.18, 0.5, z) * (0.55 + 0.45 * wn(vec3(vLp.x * 3.0, vLp.y * 3.0, vLp.z * 0.6)));   // 尾部发动机烟熏
+            float nozzle = smoothstep(0.44, 0.5, z);
+            diffuseColor.rgb *= (1.0 - 0.26 * wGrime - 0.1 * under * wBlot) * (1.0 - 0.38 * soot) * (0.95 + 0.1 * wBlot);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.95, 0.82, 0.7), nozzle * 0.6);   // 喷口金属烧成的暖褐色
+          }`)
+          .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = clamp(roughnessFactor * (0.78 + 0.5 * wBlot) + 0.12 * wGrime, 0.12, 1.0);   // 油污处更哑，磨亮处更亮`);
+      };
+      m.envMapIntensity = 0.75;   // 环境光弱一点，阳光的明暗对比才出来
+      m.needsUpdate = true;
+    }
+  });
+}
 const jetGLTF = {}, jetLoading = {};
 const gltfLoader = new GLTFLoader();
 function loadJet(id) {
@@ -947,7 +1030,7 @@ function loadJet(id) {
       const b64 = window.JETDATA[id], bin = atob(b64), buf = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
       delete window.JETDATA[id];
-      gltfLoader.parse(buf.buffer, '', (g) => { jetGLTF[id] = g; resolve(g); }, reject);
+      gltfLoader.parse(buf.buffer, '', (g) => { if (JETS[id]) weatherJet(g, JETS[id].len); jetGLTF[id] = g; resolve(g); }, reject);
     };
     if (window.JETDATA && window.JETDATA[id]) return parse();
     const sc = document.createElement('script');   // 用 script 标签读本地 js，双击 file:// 也能用
@@ -1085,6 +1168,7 @@ class Aircraft {
     this.aimDir.copy(fwd);
     this.hp = { ...HP0 }; this.lost = { wingL: false, wingR: false, tail: false };
     this._canopyHidden = false;   // 新机身的座舱盖默认可见
+    this.bankF = undefined;
     this.alive = true; this.onFire = false; this.engineDead = false; this.pilotDead = false; this.exploded = false; this.doomed = false;
     this.trailAcc = 0; this.gunT = 0; this.tracerN = 0; this.firing = false;
     this.evadeUntil = 0; this.lastHit = -99; this.lastAttacker = null;
@@ -1167,12 +1251,16 @@ function autopilot(ac) {
   const upB = _b.set(0, 1, 0).applyQuaternion(_qInv);
   const bank = Math.atan2(upB.x, upB.y);
   const push = d.y < 0 && off < 0.8;   // 目标在下方且偏得不多时直接推杆，不翻成倒飞
-  // 目标坡度 = 把准星转到炮线"上方"所需的坡度，但上限随偏差缩小（偏 1° 最多压 20°），小修正时不会来回摇翅膀
+  // 目标坡度：准星偏得多才压坡度转过去；偏差小（跟踪、微调）时机翼基本保持当前姿态附近，用俯仰 + 方向舵修，
+  // 否则准星在机头附近左右晃一下，目标坡度就在 ±60° 之间来回跳，飞机会不停地左右摇翅膀
   const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
-  const maxBank = Math.min(Math.PI, off * 20 + 0.02);
-  const wantBank = THREE.MathUtils.clamp(wrap(bank + Math.atan2(-d.x, push ? -d.y : d.y)), -maxBank, maxBank);
+  const toward = wrap(bank + Math.atan2(-d.x, push ? -d.y : d.y));
+  const kB = THREE.MathUtils.smoothstep(off, 0.015, 0.12);
+  const raw = wrap(bank + wrap(toward - bank) * kB);   // 偏差很小时保持当前坡度不动
+  ac.bankF = ac.bankF === undefined ? raw : wrap(ac.bankF + wrap(raw - ac.bankF) * 0.18);   // 目标坡度再做一次平滑，滤掉准星的细碎抖动
+  const wantBank = ac.bankF;
   const rollTarget = wrap(wantBank - bank);
-  ctrl.roll = clamp1(rollTarget * 3 - st.w.z * 0.7);
+  ctrl.roll = clamp1(rollTarget * 2.2 - st.w.z * 1.1);
   const aFF = ac.fm.mass * 9.81 * Math.max(0, upB.y) / Math.max(st.qd * ac.fm.S * ac.fm.CLa, 1);
   // 让炮线对准准星：准星压在哪，炮弹就打到哪（GUN_DOWN 补偿炮线下倾）
   // 放下起落架（进近着舰）时改成让航迹对准准星：低速大迎角时机头比航迹高很多，按炮线飞会一路扎进海里
@@ -1366,13 +1454,15 @@ function hitGround(ac) {
   if (ac === player) { ac.st.vel.set(0, 0, 0); showWarn('坠毁 · 按 R 重新起飞', true); if (!ac.doomed) stats.deaths++; }
 }
 function updateDebris(dt) {
+  updateFireDebris(dt);
   for (let i = debris.length - 1; i >= 0; i--) {
     const d = debris[i], o = d.obj;
     d.vel.y -= 9.81 * dt; d.vel.multiplyScalar(1 - 0.35 * dt);
     o.position.addScaledVector(d.vel, dt);
     o.rotation.x += d.w.x * dt; o.rotation.y += d.w.y * dt; o.rotation.z += d.w.z * dt;
     d.life -= dt;
-    if (d.smoke && Math.random() < dt * 25) smokeFx.emit(o.position, _vv.set(0, 0, 0), rand(2, 4), 0.8, 5, 0.3, 0.3, 0.32, 0.45, -0.02, 0, 1);
+    if (d.smoke && Math.random() < dt * 25) smokeFx.emit(o.position, _vv.set(0, 0, 0), rand(3, 5), 1, 6, 0.09, 0.085, 0.08, 0.6, -0.02, 0, 1);
+    if (d.smoke && d.life > 18 && Math.random() < dt * 30) fireFx.emit(o.position, rr(1), rand(0.2, 0.4), 0.8, 1.8, 4, 1.5, 0.4, 1, -0.2, 0.5, 0.1);
     const gh = groundH(o.position.x, o.position.z);
     if (o.position.y < gh || d.life <= 0) {
       if (d.life > 0) { if (gh <= 0.5) fxSplash(o.position, 0.35); else fxBulletSplash(o.position, true); }
@@ -1389,6 +1479,9 @@ function aircraftFx(ac, dt) {
   // 加力尾焰：每个喷口一束向后拉长的火焰 + 蓝白内核
   const ab = !ac.engineDead && !ac.jet.noAB && st.thr > 0.85 ? (st.thr - 0.85) / 0.15 : 0;
   if (ac.strobe) ac.strobe.visible = ((gameTime + ac.seed) % 1.3) < 0.06;
+  // 航行灯：白天只是机翼尖上一个小亮点，夜里/阴雨里才会晕开
+  const WX = WEATHER[weather], nk = WX.night || WX.storm || WX.blue ? 1 : 0.28;
+  if (ac.navL) { ac.navL.scale.setScalar(0.55 * nk); ac.navR.scale.setScalar(0.55 * nk); ac.strobe.scale.setScalar(0.9 * nk); }
   for (const g of ac.nozzleGlow || []) { g.visible = ab > 0.02; g.material.opacity = 0.6 + 0.4 * ab; }
   for (const pm of ac.plumes) {
     pm.visible = ab > 0.02;
@@ -2715,7 +2808,7 @@ function applyWeather(id) {
   $('ui').style.display = W.night || W.storm || id === 'overcast' ? 'none' : '';
   sky.visible = true;   // 采样雾色/环境光前天空必须可见（上一个天气可能把它藏了）
   updateSun(); updateSmokeTint();
-  for (const m of [cloudMat, smokeFx.mat, glowFx.mat]) m.uniforms.fogDensity.value = scene.fog.density;
+  for (const m of [cloudMat, smokeFx.mat, glowFx.mat, fireFx.mat]) m.uniforms.fogDensity.value = scene.fog.density;
   const dome = W.night || W.dome;
   stars.material.uniforms.opacity.value = W.galaxy ? 1.25 : W.night ? 1 : W.blue ? 0.3 : 0; moon.visible = !!W.night && !W.galaxy; nightSky.visible = !!dome; sky.visible = !dome;
   if (dome) {
@@ -2732,7 +2825,7 @@ function applyWeather(id) {
     scene.fog.color.copy(U.uHaze.value).multiplyScalar(W.night ? 1.2 : W.dusk ? 0.8 : 0.92);
     if (W.dusk) duskClouds();
     if (W.blue) blueClouds();
-    for (const m of [cloudMat, smokeFx.mat, glowFx.mat]) m.uniforms.fogColor.value = scene.fog.color;
+    for (const m of [cloudMat, smokeFx.mat, glowFx.mat, fireFx.mat]) m.uniforms.fogColor.value = scene.fog.color;
   }
   rain.visible = W.rain > 0;
   // 逆光云：黄昏金边、晴天银边；阴雨夜里没有
@@ -2876,7 +2969,7 @@ function stepWorld(dt) {
 renderer.setAnimationLoop(() => {
   const rdt = Math.min(clock.getDelta(), 0.05), dt = rdt * (killcam.t > 0 ? 0.25 : 1);
   if (running && booted) stepWorld(dt);
-  smokeFx.flush(); glowFx.flush();
+  smokeFx.flush(); glowFx.flush(); fireFx.flush();
   updateCamera(killcam.t > 0 ? rdt : dt);
   water.position.x = camera.position.x; water.position.z = camera.position.z;
   cloudMat.uniforms.uCam.value.copy(camera.position);

@@ -27,7 +27,7 @@
     for (const m of missiles) scene.remove(m.mesh);
     missiles.length = 0; flares.length = 0; for (const b of bullets) b.life = 0;
     for (const d of debris) scene.remove(d.obj); debris.length = 0;
-    smokeFx.clear(); glowFx.clear();   // 上个镜头的烟和火光不能留到下个镜头
+    smokeFx.clear(); glowFx.clear(); fireFx.clear(); fireDebris.length = 0;   // 上个镜头的烟和火光不能留到下个镜头
     shakeAmp = 0;
     M.bomber = null;
   }
@@ -86,7 +86,7 @@
     flash.intensity *= Math.exp(-dt * 9);
   }
   function render(dt) {
-    smokeFx.flush(); glowFx.flush();
+    smokeFx.flush(); glowFx.flush(); fireFx.flush();
     water.position.x = camera.position.x; water.position.z = camera.position.z;
     cloudMat.uniforms.uCam.value.copy(camera.position); sky.position.copy(camera.position);
     tickIslands(camera.position); tickIslands(camera.position); tickIslands(camera.position); tickIslands(camera.position);
@@ -141,7 +141,7 @@
   }, (t) => {
     const R = 3200, w = 245 / R, c = V3().set(-6000, 1800, -2000);
     const pathB = (u) => V3().set(c.x + R * Math.cos(w * u), c.y + 60 * Math.sin(u * 0.18), c.z + R * Math.sin(w * u));
-    const pathA = (u) => pathB(u - 1.25).add(V3().set(0, -8, 0));
+    const pathA = (u) => pathB(u - 1.25).add(V3().set(0, -8 + (u > 5.3 ? (u - 5.3) ** 2 * 30 : 0), 0));   // 敌机炸开后拉起，避开烟团
     if (B.scripted) fly(B, pathB, t, 1);
     fly(A, (u) => pathA(u), t, 1);
     // 让 F-22 的炮线指向提前量点（瞄准辅助接管弹道）
@@ -269,6 +269,37 @@
     if (at(t, 0.5)) ev('flyby', 1.2, A.st.pos, 0.95);
   });
 
+  // 特写样张模式（只用来出图片 demo，不进成片）：几款战机贴近拍质感
+  if (window.__CLOSE) {
+    S.length = 0;
+    for (const [type, f, r, u, wx] of [['FA-18F', -13, 3, 6, 'clear'], ['F-16', 13, 8, 2.5, 'clear'], ['F-22', 2, 19, 3, 'clear'], ['Su-57', 15, -7, -2, 'clear'], ['F-15E', -16, -11, 5, 'dusk'], ['F-22', 12, 6, 1.5, 'dusk']]) {
+      shot(1, () => { clearAll(); applyWeather(wx); A = mk(type, true); fov(40); }, (t) => {
+        const dir = V3().set(0.5, 0, 0.86).normalize();
+        fly(A, (q) => V3().set(ISL.x - 3000, 1400, ISL.z - 3000).addScaledVector(dir, 230 * q), t, 1);
+        const fw = V3().set(0, 0, 1).applyQuaternion(A.st.q), rt = V3().crossVectors(fw, UP).normalize();
+        look(A.st.pos.clone().addScaledVector(fw, f).addScaledVector(rt, r).addScaledVector(UP, u), A.st.pos.clone().addScaledVector(fw, f > 0 ? 1 : -1));
+      });
+    }
+  }
+  // 滚转稳定性测试（不进成片）：真实物理 + 自动驾驶跟一个缓慢转动、带鼠标抖动的准星，打印坡度
+  if (window.__ROLLTEST) {
+    S.length = 0;
+    shot(12, () => { clearAll(); applyWeather('clear'); A = mk('MiG-29', true); A.scripted = false; A.reset(V3().set(0, 1500, 0), V3().set(0, 0, 1), 250, 'MiG-29'); A.scripted = false; fov(50); }, (t) => {
+      const yaw = 0.105 * t + 0.035 * Math.sin(t * 4.4) * (t > 6 ? 1 : 0), pit = 0.02 * Math.sin(t * 3.1);
+      player.aimDir.set(Math.sin(yaw) * Math.cos(pit), Math.sin(pit), Math.cos(yaw) * Math.cos(pit));
+      player.st.thr = 0.9; autopilot(player);
+      look(chase(A, 30, 6, 0), A.st.pos);
+      const up = V3().set(0, 1, 0).applyQuaternion(A.st.q.clone().invert()); const bank = Math.atan2(up.x, up.y) * 57.3;
+      if (evOK && Math.abs((t * 4) - Math.round(t * 4)) < 0.01) console.log('RT ' + t.toFixed(2) + ' ' + bank.toFixed(1));
+    });
+  }
+  if (window.__CLOSE) for (const wx of ['clear', 'dusk']) shot(2, () => { clearAll(); applyWeather(wx); B = mk('MiG-29'); fov(46); }, (t) => {   // 爆炸样张
+    const dir = V3().set(0.5, 0, 0.86).normalize(), side = V3().crossVectors(dir, UP).normalize();
+    if (B.alive) fly(B, (q) => V3().set(ISL.x - 3000, 1400, ISL.z - 3000).addScaledVector(dir, 230 * q), t, 1);
+    if (t > 0.2 && !B.exploded) { killed(B); B.hp.fuse = 0; explodeAir(B); }
+    const c = V3().set(ISL.x - 3000, 1400, ISL.z - 3000).addScaledVector(dir, 230 * 0.2);
+    look(c.clone().addScaledVector(side, 160).addScaledVector(dir, -90).add(V3().set(0, 25, 0)), c.clone().addScaledVector(dir, 40));
+  });
   // ---- 录制接口 ----
   let frame = 0, cur = -1, shotT = 0;
   const starts = []; { let acc = 0; for (const s of S) { starts.push(acc); acc += s.dur; } window.PROMO_LEN = acc; }
