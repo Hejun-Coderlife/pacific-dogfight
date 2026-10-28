@@ -2122,7 +2122,7 @@ const rainPos = new Float32Array(RAIN_N * 3), rainLine = new Float32Array(RAIN_N
 for (let i = 0; i < RAIN_N; i++) rainPos.set([(Math.random() - 0.5) * RAIN_BOX, (Math.random() - 0.5) * RAIN_BOX, (Math.random() - 0.5) * RAIN_BOX], i * 3);
 const rainGeo = new THREE.BufferGeometry();
 rainGeo.setAttribute('position', new THREE.BufferAttribute(rainLine, 3).setUsage(THREE.DynamicDrawUsage));
-const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: new THREE.Color(1.4, 1.5, 1.6), transparent: true, opacity: 0.55, fog: false, depthWrite: false }));
+const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: new THREE.Color(1.2, 1.3, 1.4), transparent: true, opacity: 0.4, fog: false, depthWrite: false }));
 rain.frustumCulled = false; rain.visible = false; scene.add(rain);
 // 闪电：一道折线 + 全场闪亮，雷声按距离延迟
 const boltGeo = new THREE.BufferGeometry();
@@ -2152,7 +2152,7 @@ function updateWeather(dt) {
       let x = rainPos[i * 3] + rel.x, y = rainPos[i * 3 + 1] + rel.y, z = rainPos[i * 3 + 2] + rel.z;
       x = ((x + h) % RAIN_BOX + RAIN_BOX) % RAIN_BOX - h; y = ((y + h) % RAIN_BOX + RAIN_BOX) % RAIN_BOX - h; z = ((z + h) % RAIN_BOX + RAIN_BOX) % RAIN_BOX - h;
       rainPos[i * 3] = x; rainPos[i * 3 + 1] = y; rainPos[i * 3 + 2] = z;
-      const sx = rel.x / Math.max(dt, 1e-3) * 0.035, sy = rel.y / Math.max(dt, 1e-3) * 0.035, sz = rel.z / Math.max(dt, 1e-3) * 0.035;
+      const sx = rel.x / Math.max(dt, 1e-3) * 0.014, sy = rel.y / Math.max(dt, 1e-3) * 0.014, sz = rel.z / Math.max(dt, 1e-3) * 0.014;
       rainLine.set([cp.x + x, cp.y + y, cp.z + z, cp.x + x - sx, cp.y + y - sy, cp.z + z - sz], i * 6);
     }
     rainGeo.attributes.position.needsUpdate = true;
