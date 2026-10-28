@@ -854,6 +854,7 @@ class Aircraft {
     this.aimDir = new THREE.Vector3(0, 0, 1);
     this.seed = Math.random() * 100;
     this.mesh = null;
+    this.prevVel = V3(); this.accEst = V3();
   }
   reset(pos, fwd, speed, type) {
     if (this.mesh) { scene.remove(this.mesh); disposeTree(this.mesh); }
@@ -1153,8 +1154,9 @@ function volley(ac) {
   const mp = ac.mesh.localToWorld(_pp.copy(ac.gun));
   const dir = _vv.set(-ac.gun.x, -600 * GUN_DOWN - ac.gun.y, 600 - ac.gun.z).normalize().applyQuaternion(ac.st.q);   // 600 米交汇
   // 瞄准辅助：炮线离提前量点不远时（1.5 km 内 8°，更远 4°），弹道自动修正过去
-  if (ac === player && leadAim.ok) {
-    const want = _c.subVectors(leadAim.p, mp).normalize();
+  if (ac === player && leadAim.ok && leadAim.target && leadAim.target.alive) {
+    // 开火这一刻从炮口现算提前量（HUD 上的菱形是上一帧的，低帧率时会差好几米）
+    const want = _c.subVectors(leadPoint(mp, ac.st.vel, leadAim.target, _lp), mp).normalize();
     if (want.dot(dir) > Math.cos(leadAim.dist < 1500 ? 0.14 : 0.07)) dir.copy(want);
   }
   dir.add(rr(0.0015)).normalize();
@@ -1169,7 +1171,7 @@ function fireGuns(ac, dt) {
   if (!ac.firing || ac.pilotDead) return;
   while (ac.gunT <= 0) { ac.gunT += 1 / GUN_RATE; volley(ac); }
 }
-const _r0 = V3(), _r1 = V3(), _seg = V3(), _cl = V3();
+const _r0 = V3(), _r1 = V3(), _seg = V3(), _cl = V3(), _lp = V3();
 function updateBullets(dt) {
   let n = 0;
   for (const b of bullets) {
@@ -1184,7 +1186,8 @@ function updateBullets(dt) {
       if (p0.distanceToSquared(st.pos) > (8 + b.v.length() * dt) ** 2) continue;
       // 用相对速度把这一帧的弹道段换到目标机体系里做球体检测
       _qInv.copy(st.q).invert();
-      const s0 = _r1.subVectors(p0, st.pos).applyQuaternion(_qInv);
+      // 物理已把目标挪到本帧末，退回本帧开头再和炮弹的起点比较
+      const s0 = _r1.subVectors(p0, st.pos).addScaledVector(st.vel, dt).applyQuaternion(_qInv);
       const sd = _seg.subVectors(b.v, st.vel).multiplyScalar(dt).applyQuaternion(_qInv);
       const dd = sd.lengthSq(), hitScale = b.owner === player ? 2.5 : 1;   // 玩家炮弹的受弹范围放大 1.6 倍（半径）
       let best = null, bestT = 2;
@@ -1236,7 +1239,18 @@ function mountMissiles(ac) {
   ac.nextSlot = 0;
 }
 const missiles = [];
-const leadAim = { ok: false, p: new THREE.Vector3(), dist: 9999 };
+const leadAim = { ok: false, p: new THREE.Vector3(), dist: 9999, target: null };
+// 提前量点：炮弹（继承射手速度 + 初速）飞到时目标所在的位置，含重力下坠和目标机动补偿
+const _lv = new THREE.Vector3();
+function leadPoint(from, fromVel, T, out) {
+  let t = T.st.pos.distanceTo(from) / GUN_V;
+  for (let i = 0; i < 3; i++) {
+    out.copy(T.st.pos).addScaledVector(_lv.subVectors(T.st.vel, fromVel), t).addScaledVector(UP, 4.9 * t * t)
+      .addScaledVector(T.accEst, 0.5 * t * t);   // 目标正在转弯：按当前加速度外推
+    t = out.distanceTo(from) / GUN_V;
+  }
+  return out;
+}
 const lock = { target: null, t: 0 };
 function updateLock(dt) {
   if (!player.alive) { lock.target = null; lock.t = 0; return; }
@@ -1457,18 +1471,13 @@ function updateHUD(dt) {
   for (; k < tgtEls.length; k++) tgtEls[k].style.opacity = 0;
   // 提前量：子弹飞到目标所需时间内，目标相对我方的位移 + 子弹下坠
   if (leadTgt && player.alive) {
-    let t = leadTgt.st.pos.distanceTo(st.pos) / GUN_V;
-    const lp = V3();
-    for (let i = 0; i < 2; i++) {
-      lp.copy(leadTgt.st.pos).addScaledVector(_b.subVectors(leadTgt.st.vel, st.vel), t).addScaledVector(UP, 4.9 * t * t);
-      t = lp.distanceTo(st.pos) / GUN_V;
-    }
+    const lp = leadPoint(st.pos, st.vel, leadTgt, V3());
     place(hud.lead, lp);
-    leadAim.ok = true; leadAim.p.copy(lp); leadAim.dist = leadTgt.st.pos.distanceTo(st.pos);
+    leadAim.ok = true; leadAim.p.copy(lp); leadAim.dist = leadTgt.st.pos.distanceTo(st.pos); leadAim.target = leadTgt;
     // 进入有效射程且炮线已在辅助范围内：菱形变红实心 = 现在开火
     const gunDir = _b.set(0, -GUN_DOWN, 1).normalize().applyQuaternion(st.q), toLead = _c.subVectors(lp, st.pos).normalize();
     hud.lead.classList.toggle('fire', leadAim.dist < 1200 && gunDir.dot(toLead) > Math.cos(0.14));
-  } else { hud.lead.style.opacity = 0; leadAim.ok = false; }
+  } else { hud.lead.style.opacity = 0; hud.lead.classList.remove('fire'); leadAim.ok = false; leadAim.target = null; }
 
   if (warnSticky) return;
   const agl = st.pos.y - groundH(st.pos.x, st.pos.z);
@@ -1567,8 +1576,10 @@ function stepWorld(dt) {
     autopilot(player);
   }
   for (const ac of aircraft) if (ac !== player && ac.alive) enemyBrain(ac);
+  for (const ac of aircraft) ac.prevVel.copy(ac.st.vel);
   const n = Math.ceil(dt / (1 / 120));
   for (let i = 0; i < n; i++) for (const ac of aircraft) if (ac.alive) physicsStep(ac, dt / n);
+  for (const ac of aircraft) ac.accEst.lerp(_a.subVectors(ac.st.vel, ac.prevVel).divideScalar(dt), 0.3);   // 平滑后的加速度，给提前量用
   for (const ac of aircraft) {
     if (!ac.alive) continue;
     ac.mesh.position.copy(ac.st.pos); ac.mesh.quaternion.copy(ac.st.q); ac.mesh.updateMatrixWorld();
