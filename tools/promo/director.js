@@ -168,9 +168,14 @@
     if (MS) {
       const d = MS.pos.distanceTo(B.st.pos);
       slow = d < 350 ? 0.25 : 1;
-      // 侧面跟拍：导弹侧影、尾焰和身后拖出的烟迹都在画面里
+      // 追尾跟拍：镜头贴在导弹尾焰后面一路追上去，起初落后一截、随后越追越近，目标在前方越来越大
       const mv = MS.vel.clone().normalize(), side = V3().crossVectors(mv, UP).normalize();
-      look(MS.pos.clone().addScaledVector(side, 9).addScaledVector(UP, 1.8).addScaledVector(mv, -3), MS.pos.clone().addScaledVector(mv, 7));
+      const k = ease(Math.min(1, (t - 0.5) / 1.3)), back = 15 - 10.5 * k, sd = 9 - 8.3 * k, up = 1.9 - 0.6 * k;   // 先在载机侧面看发射，再贴到尾焰斜上方追
+      const shk = 0.1 * k;   // 高速气流里的轻微抖动
+      const cam = MS.pos.clone().addScaledVector(mv, -back).addScaledVector(UP, up).addScaledVector(side, sd)
+        .add(V3().set(Math.sin(t * 61) * shk, Math.sin(t * 47 + 1) * shk, Math.sin(t * 53 + 2) * shk));
+      look(cam, MS.pos.clone().addScaledVector(mv, 70).lerp(B.st.pos, 0.12));
+      if (camera.fov !== 62) fov(62);
     } else if (t <= 0.5) {
       const f = V3().set(0, 0, 1).applyQuaternion(A.st.q);
       look(A.st.pos.clone().addScaledVector(f, -22).addScaledVector(UP, 5), A.st.pos.clone().addScaledVector(f, 60));
@@ -226,9 +231,9 @@
   // 10 夜晚：镜头望向月亮，两架战机拖着加力火焰从月下掠过，海面上是月光带
   let NC, ND, NW;
   shot(5, () => {
-    NW = window.__NIGHTW || 'dream';   // 夜景这一镜用星河暮光
-    clearAll(); applyWeather(NW); A = mk('F-22', true); B = mk('Su-57'); fov(NW === 'starry' ? 56 : NW === 'dream' ? 64 : 44);
-    const md = NW === 'starry' ? V3().set(0.908, 0, -0.418) : NW === 'bluehour' || NW === 'dream' ? V3().set(Math.sin(4 / 57.3), 0, Math.cos(4 / 57.3)) : moonDir().clone().setY(0).normalize();
+    NW = window.__NIGHTW || 'starry';   // 夜景这一镜用写实的无月银河夜
+    clearAll(); applyWeather(NW); A = mk('F-22', true); B = mk('Su-57'); fov(NW === 'starry' ? 56 : 44);
+    const md = NW === 'starry' ? V3().set(0.908, 0, -0.418) : NW === 'bluehour' ? V3().set(Math.sin(4 / 57.3), 0, Math.cos(4 / 57.3)) : moonDir().clone().setY(0).normalize();
     NC = V3().set(9000, 45, -3000); ND = md;
   }, (t) => {
     const side = V3().crossVectors(ND, UP).normalize();   // 从左往右横穿画面
@@ -236,7 +241,7 @@
     const pathA = (u) => base.clone().addScaledVector(side, -330 + 150 * u).add(V3().set(0, 70 + 6 * u, 0));
     const pathB = (u) => base.clone().addScaledVector(ND, 30).addScaledVector(side, -365 + 150 * u).add(V3().set(0, 58 + 6 * u, 0));
     fly(A, pathA, t, 1); fly(B, pathB, t, 1);
-    look(NC, NC.clone().addScaledVector(ND, 500).addScaledVector(side, 40 * (t - 2.2)).add(V3().set(0, NW === 'dream' ? 330 : 190, 0)));
+    look(NC, NC.clone().addScaledVector(ND, 500).addScaledVector(side, 40 * (t - 2.2)).add(V3().set(0, 190, 0)));
     if (Math.abs(t - 1.6) < DT / 2) ev('flyby', 1.0, A.st.pos, 0.9);
   });
   // 11 蓝天里拉起远去（片尾）
