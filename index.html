@@ -901,7 +901,7 @@ class Particles {
     this.dirty = false;
   }
 }
-const smokeFx = new Particles(6000, false, cloudMat.uniforms.map.value);
+const smokeFx = new Particles(6000, false, fireTexture());   // 烟用边缘严格淡到 0 的贴图，贴近镜头、颜色很深时也不露方边
 const glowFx = new Particles(3000, true, glowTexture());
 const fireFx = new Particles(3000, true, fireTexture());   // 火焰：加色混合 + 翻滚云团贴图，火球才有菜花状的细节
 const fireDebris = [];   // 爆炸甩出去的燃烧碎块：一路拖着火和黑烟往下坠

@@ -141,7 +141,7 @@
   }, (t) => {
     const R = 3200, w = 245 / R, c = V3().set(-6000, 1800, -2000);
     const pathB = (u) => V3().set(c.x + R * Math.cos(w * u), c.y + 60 * Math.sin(u * 0.18), c.z + R * Math.sin(w * u));
-    const pathA = (u) => pathB(u - 1.25).add(V3().set(0, -8 + (u > 5.3 ? (u - 5.3) ** 2 * 30 : 0), 0));   // 敌机炸开后拉起，避开烟团
+    const pathA = (u) => pathB(u - 1.25).add(V3().set(0, -8 + (u > 5.3 ? (u - 5.3) ** 2 * 18 : 0), 0));   // 敌机炸开后拉起，避开烟团
     if (B.scripted) fly(B, pathB, t, 1);
     fly(A, (u) => pathA(u), t, 1);
     // 让 F-22 的炮线指向提前量点（瞄准辅助接管弹道）
@@ -149,7 +149,8 @@
     A.firing = (t > 1.2 && t < 2.6) || (t > 3.4 && t < 5.2);
     if (t > 3.6 && !B.onFire) B.onFire = true;
     if (t > 5.4 && !B.exploded) { killed(B); B.hp.fuse = 0; explodeAir(B); }
-    look(chase(A, 32, 9, 7), lerpV(A.st.pos, B.st.pos, 0.3));
+    const sx = t > 5.3 ? Math.min(1, (t - 5.3) / 1.2) : 0;   // 炸开后镜头往侧面拉开，看着残骸落下
+    look(chase(A, 32 + 20 * sx, 9 + 6 * sx, 13 + 40 * sx), lerpV(A.st.pos, B.st.pos, 0.3 + 0.3 * sx));
   });
   // 5b 座舱视角：从驾驶员眼睛看出去，仪表板 + HUD 框，前方敌机在群岛上空转弯
   shot(4, () => { clearAll(); A = mk('F-22', true); B = mk('Su-57'); fov(66); camera.near = 0.1; camera.updateProjectionMatrix(); }, (t) => {
