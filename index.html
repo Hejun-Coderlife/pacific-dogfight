@@ -47,6 +47,9 @@
   #lnd { position: absolute; left: 0; top: 0; color: #6fb7ff; font-size: 12px; opacity: 0; }
   #lnd::before { content: ''; position: absolute; width: 26px; height: 14px; margin: -8px 0 0 -14px; border: 2px solid #6fb7ff; }
   #lnd span { position: absolute; left: 18px; top: -8px; white-space: nowrap; }
+  body.cockpit #hud { color: #9effb8; text-shadow: 0 0 6px rgba(80,255,140,.6); }
+  body.cockpit #aim::before { border-color: rgba(140,255,170,.9); }
+  #gfx { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 4; }
   #obj { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #8ef0a8; letter-spacing: .05em; }
   #radar { position: absolute; right: 16px; bottom: 30px; width: 200px; height: 200px; }
   #result { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(4,8,14,.5); z-index: 6; }
@@ -76,6 +79,7 @@
              font-size: 13px; letter-spacing: .3em; background: #05070a; transition: opacity .9s; pointer-events: none; }
 </style>
 <script src="assets/models/CVN-78-deck.js"></script>
+<script src="assets/sfx.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
@@ -105,7 +109,7 @@
     <div class="opts">起飞 <span id="spm"><button data-v="air" class="sel">空中出发</button><button data-v="deck">航母弹射</button></span></div>
     <div class="opts">难度 <span id="diff"><button data-v="rookie">新兵</button><button data-v="vet" class="sel">老手</button><button data-v="ace">王牌</button></span></div>
     <p class="go">选好机型，点击空白处开始</p>
-    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · G 起落架 · T 弹射 · M 雷达量程 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头距离 · R 重新起飞 · Esc 暂停</p>
+    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · G 起落架 · T 弹射 · M 雷达量程 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>按住 C 自由看 · V 切镜头（含座舱） · R 重新起飞 · Esc 暂停</p>
   </div>
 </div>
 <div id="result"><div class="card">
@@ -113,6 +117,7 @@
   <table id="rstats"></table>
   <p><button id="again">再来一次</button><button id="tohangar">返回机库</button></p>
 </div></div>
+<div id="gfx"></div>
 <div id="credit">机模：bohmerang（10 款）、outpiston（F-117）· Sketchfab · CC BY-NC-SA 4.0</div>
 <div id="ui">
   太阳高度 <input id="sun" type="range" min="1" max="40" step="0.5" value="5"> <span id="sunv">5°</span>
@@ -820,6 +825,26 @@ function loadJet(id) {
   });
   return jetLoading[id];
 }
+// 飞行员眼位：取最大那块座舱玻璃的包围盒，眼睛在玻璃中心略低处；找不到玻璃就按机长比例估
+const _box = new THREE.Box3();
+function eyePos(id) {
+  const j = JETS[id];
+  if (j.eye) return j.eye;
+  const g = jetMesh(id); g.updateMatrixWorld(true);
+  // 座舱盖 = 机身中线附近、在前半段的玻璃（有的模型里航行灯罩也叫 Glass，体积还更大）；有 HUD 就把眼睛放在 HUD 正后方
+  let canopy = null, hud = null, bestV = 0;
+  g.traverse((n) => {
+    if (!n.isMesh) return;
+    const name = n.material?.name || '';
+    _box.setFromObject(n); const sz = _box.getSize(V3()), c = _box.getCenter(V3());
+    if (/hud/i.test(name) && sz.x < 1) hud = _box.clone();
+    else if (/glass|canopy/i.test(name) && !/inst/i.test(name) && sz.x < 2 && Math.abs(c.x) < 0.3 && c.z > 0 && sz.x * sz.y * sz.z > bestV) { bestV = sz.x * sz.y * sz.z; canopy = _box.clone(); }
+  });
+  if (hud) j.eye = hud.getCenter(V3()).add(V3().set(0, 0.06, -0.75));
+  else if (canopy) j.eye = V3().set(0, canopy.min.y + 0.6 * (canopy.max.y - canopy.min.y), canopy.min.z + 0.43 * (canopy.max.z - canopy.min.z));
+  else j.eye = V3().set(0, 0.07 * j.len, 0.28 * j.len);
+  return j.eye;
+}
 function jetMesh(id) {
   const g = new THREE.Group(), m = jetGLTF[id].scene.clone(true);
   m.rotation.y = Math.PI;   // 导出的模型机头朝 -Z，转过来对齐机体系 +Z
@@ -1123,11 +1148,28 @@ function debrisChunk(ac, name) {
   ac.mesh.add(m); ac.mesh.updateMatrixWorld(true);
   return m;
 }
+const killcam = { t: 0, target: null, ang: 0 };
+let timeScale = 1;
+function startKillcam(ac) {
+  if (cam.cockpit || M.result) return;
+  killcam.t = 1.8; killcam.target = ac; killcam.ang = Math.random() * 6.28;
+  killcam.pos = ac.st.pos.clone();
+}
+function updateKillcam(dt) {
+  killcam.t -= dt;   // 真实时间
+  const T = killcam.target;
+  if (T.alive) killcam.pos.copy(T.st.pos);
+  killcam.ang += dt * 0.6;
+  const r = 28 + T.jet.len * 1.5;
+  camera.position.set(killcam.pos.x + Math.cos(killcam.ang) * r, killcam.pos.y + r * 0.35, killcam.pos.z + Math.sin(killcam.ang) * r);
+  camera.lookAt(killcam.pos);
+  timeScale = killcam.t > 0 ? 0.25 : 1;
+}
 function credit(ac) {
   if (ac.doomed) return;
   ac.doomed = true;
   if (ac === player) { showWarn('被击落 · 按 R 重新起飞', true); stats.deaths++; }
-  if (ac !== player && ac.lastAttacker === player) { kills++; showMsg('击落！'); }
+  if (ac !== player && ac.lastAttacker === player) { kills++; showMsg('击落！'); startKillcam(ac); }
 }
 function checkDamage(ac) {
   const h = ac.hp;
@@ -1480,7 +1522,7 @@ function updateFlares(dt) {
 }
 function sfxTouchdown(k) { playBuf(audio?.boom, 0.3 + 0.5 * k, 320, 'lowpass', 1.6); }
 function sfxFlare() { playBuf(audio?.tick, 0.6, 1800, 'bandpass', 0.5); }
-function sfxLaunch() { playBuf(audio?.boom, 0.5, 1400, 'bandpass', 1.8); }
+function sfxLaunch() { if (audio?.real.missile) return playReal('missile', 0.9); playBuf(audio?.boom, 0.5, 1400, 'bandpass', 1.8); }
 
 // ---------- 声音（WebAudio 合成，无素材） ----------
 let audio = null;
@@ -1505,7 +1547,20 @@ function initAudio() {
   const lockOsc = ac.createOscillator(), lockG = ac.createGain(); lockOsc.type = 'square'; lockOsc.frequency.value = 1150; lockG.gain.value = 0;
   lockOsc.connect(lockG); lockG.connect(sfx);
   [o1, o2, pulse, noise, lockOsc].forEach((n) => n.start());
-  audio = { ac, o1, o2, pulse, lp, wg, master, sfx, lockG, lockOsc, gun: noiseBuf(ac, 0.09, 45), boom: noiseBuf(ac, 2.2, 2.2), tick: noiseBuf(ac, 0.03, 160) };
+  // 真实录音（freesound/Kenney CC0）：解码后替换合成音
+  const real = {};
+  for (const [k, b64] of Object.entries(window.SFXDATA || {})) {
+    const bin = atob(b64), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    ac.decodeAudioData(u8.buffer).then((buf) => { real[k] = buf; if (k === 'engine' || k === 'afterburner' || k === 'cannon' || k === 'warning' || k === 'rain') startLoop(k); });
+  }
+  const loops = {};
+  function startLoop(k) {
+    const src = ac.createBufferSource(), g = ac.createGain(); src.buffer = real[k]; src.loop = true; g.gain.value = 0;
+    src.connect(g); g.connect(k === 'engine' || k === 'afterburner' ? master : sfx); src.start(); loops[k] = { src, g };
+    if (k === 'engine') eg.gain.value = 0;   // 有真实发动机声就静音合成音
+  }
+  audio = { ac, o1, o2, pulse, lp, wg, master, sfx, lockG, lockOsc, real, loops, gun: noiseBuf(ac, 0.09, 45), boom: noiseBuf(ac, 2.2, 2.2), tick: noiseBuf(ac, 0.03, 160) };
 }
 function playBuf(buf, gain, freq, type = 'lowpass', rate = 1) {
   if (!audio || audio.ac.state !== 'running') return;
@@ -1513,13 +1568,23 @@ function playBuf(buf, gain, freq, type = 'lowpass', rate = 1) {
   s.buffer = buf; s.playbackRate.value = rate; f.type = type; f.frequency.value = freq; g.gain.value = gain;
   s.connect(f); f.connect(g); g.connect(audio.sfx); s.start();
 }
-function sfxGun() { playBuf(audio?.gun, 0.55, 2200, 'lowpass', rand(0.9, 1.1)); }
+function sfxGun() { if (audio?.loops.cannon) return; playBuf(audio?.gun, 0.55, 2200, 'lowpass', rand(0.9, 1.1)); }
 function sfxHurt(k) { playBuf(audio?.tick, 0.5 + 0.5 * k, 900, 'lowpass', 0.6); }
 function sfxHit() { playBuf(audio?.tick, 0.5, 3200, 'bandpass', 1); }
 function sfxBoom(p, k) {
-  if (!player) return;
-  const d = p.distanceTo(player.st.pos);
-  playBuf(audio?.boom, Math.min(1.2, k * 1.4 / (1 + d / 350)), 380, 'lowpass', rand(0.8, 1));
+  if (!player || !audio) return;
+  const d = p.distanceTo(player.st.pos), R = audio.real;
+  if (!R.boom_far) { playBuf(audio.boom, Math.min(1.2, k * 1.4 / (1 + d / 350)), 380, 'lowpass', rand(0.8, 1)); return; }
+  // 近处爆炸清脆、远处闷响，声音按 340 m/s 传播延迟到达
+  const delay = d / 340, g = Math.min(1.4, k * 1.6 / (1 + d / 400));
+  if (d < 600) { playReal('boom_near', g, 20000, delay, rand(0.85, 1.1)); playReal('boom_low', g * 0.9, 900, delay); }
+  else playReal('boom_far', g * 1.6, Math.max(500, 4000 - d * 0.6), delay, rand(0.9, 1.05));
+}
+function playReal(k, gain, lp = 20000, delay = 0, rate = 1) {
+  if (!audio || !audio.real[k] || audio.ac.state !== 'running') return;
+  const ac = audio.ac, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  s.buffer = audio.real[k]; s.playbackRate.value = rate; f.type = 'lowpass'; f.frequency.value = lp; g.gain.value = gain;
+  s.connect(f); f.connect(g); g.connect(audio.sfx); s.start(ac.currentTime + delay);
 }
 function updateAudio() {
   if (!audio) return;
@@ -1534,15 +1599,41 @@ function updateAudio() {
   const threatened = missiles.some((m) => m.target === player);
   const lg = dead ? 0 : threatened ? ((gameTime * 9) % 1 < 0.5 ? 0.05 : 0) : !lock.target ? 0 : lock.t >= 1 ? 0.035 : (gameTime * 7) % 1 < 0.45 ? 0.03 : 0;   // 锁定中嘀嘀，锁定后长音，导弹来袭急促报警
   audio.lockOsc.frequency.setTargetAtTime(threatened ? 1700 : 1150, t, 0.01);
-  audio.lockG.gain.setTargetAtTime(lg, t, 0.01);
+  audio.lockG.gain.setTargetAtTime(threatened && audio.loops.warning ? 0 : lg, t, 0.01);
+  // 真实录音的循环音：发动机/加力随油门，机炮按住才响，导弹来袭报警
+  const L = audio.loops, ab = !dead && !player.engineDead && st.thr > 0.85 && !player.jet.noAB ? (st.thr - 0.85) / 0.15 : 0;
+  if (L.engine) { L.engine.g.gain.setTargetAtTime(dead ? 0 : 0.35 + 0.5 * rpm, t, 0.2); L.engine.src.playbackRate.setTargetAtTime(0.7 + 0.5 * rpm, t, 0.3); }
+  if (L.afterburner) L.afterburner.g.gain.setTargetAtTime(ab * 0.9, t, 0.15);
+  if (L.cannon) L.cannon.g.gain.setTargetAtTime(player.firing && player.alive ? 0.7 : 0, t, 0.03);
+  if (L.warning) L.warning.g.gain.setTargetAtTime(threatened && !dead ? 0.6 : 0, t, 0.05);
+  // 敌机贴身掠过：呼啸声（3 秒内只放一次）
+  if (audio.real.flyby && gameTime > (audio.flybyT || 0)) for (const a of aircraft) {
+    if (a === player || !a.alive) continue;
+    const d = a.st.pos.distanceTo(st.pos);
+    if (d < 140 && _a.subVectors(a.st.vel, st.vel).length() > 120) { playReal('flyby', 0.8, 20000, 0, rand(0.9, 1.15)); audio.flybyT = gameTime + 3; break; }
+  }
 }
 
 // ---------- 镜头 ----------
-const cam = { offset: new THREE.Vector3(0, 6, -32), dist: 32, free: false };
+const cam = { offset: new THREE.Vector3(0, 6, -32), dist: 32, free: false, cockpit: false };
 let aimYaw = 0, aimPitch = 0, freeYaw = 0, freePitch = 0;
 function syncAimAngles() { const d = player.aimDir; aimYaw = Math.atan2(d.x, d.z); aimPitch = Math.asin(THREE.MathUtils.clamp(d.y, -1, 1)); }
 function dirFromAngles(yaw, pitch, out) { return out.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)); }
+const _cq = new THREE.Quaternion(), _flip = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
 function updateCamera(dt) {
+  if (killcam.t > 0) return updateKillcam(dt);
+  if (cam.cockpit && player.alive) {
+    // 座舱：眼位跟着机身，镜头朝机头（three 的相机看 -Z，所以绕 Y 转 180°）；按住 C 可以转头看
+    camera.position.copy(player.mesh.localToWorld(_a.copy(eyePos(player.type))));
+    camera.quaternion.copy(player.st.q).multiply(_flip);
+    if (cam.free) { _cq.setFromEuler(_eu.set(freePitch - aimPitch, freeYaw - aimYaw, 0, 'YXZ')); camera.quaternion.multiply(_cq); }
+    if (shake > 0) { camera.position.add(rr(shake * 0.15)); shake = Math.max(0, shake - dt * 1.5); }
+    if (camera.near !== 0.1) { camera.near = 0.1; camera.updateProjectionMatrix(); }
+    const fov = 62 + 10 * smoothstep(150, 650, player.st.V);
+    if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
+    return;
+  }
+  if (camera.near !== 1) { camera.near = 1; camera.updateProjectionMatrix(); }
   const look = cam.free ? dirFromAngles(freeYaw, freePitch, _a) : _a.copy(player.aimDir);
   const target = _b.copy(look).multiplyScalar(-cam.dist).addScaledVector(UP, cam.dist * 0.2);
   cam.offset.lerp(target, 1 - Math.exp(-dt * 10));
@@ -1563,7 +1654,7 @@ let warnSticky = false, msgT = 0, hitT = 0;
 function showWarn(t, sticky = false) { hud.warn.textContent = t; hud.warn.style.opacity = t ? 1 : 0; warnSticky = sticky; }
 function showMsg(t) { hud.msg.textContent = t; hud.msg.style.opacity = 1; msgT = 1.8; }
 function hitMark() { hitT = 0.12; sfxHit(); }
-let hurtT = 0, shake = 0;
+let hurtT = 0, shake = 0, gStress = 0;
 function playerHurt(k) { hurtT = Math.max(hurtT, 0.25 + 0.35 * k); shake = Math.max(shake, 0.4 * k + 0.15); sfxHurt(k); }
 function screenPos(v) {
   const p = _d.copy(v).project(camera);
@@ -1592,6 +1683,15 @@ function updateHUD(dt) {
   $('hpv').textContent = Math.round(hpSum * 100); $('hpv').style.color = hpSum < 0.4 ? '#ff6a5a' : hpSum < 0.7 ? '#ffd27a' : '';
   $('flv').textContent = player.flares;
   $('dmg').style.opacity = (hurtT -= dt) > 0 ? Math.min(1, hurtT * 2.5) : 0;
+  // 持续高 G：血液被甩离大脑，视野四周发灰变窄；负 G 时充血发红
+  gStress = THREE.MathUtils.clamp(gStress + (st.g > 6.5 ? (st.g - 6.5) * 0.3 : st.g < -1.5 ? (st.g + 1.5) * 0.4 : -0.6) * dt, -1, 1);
+  const gfx = $('gfx');
+  if (Math.abs(gStress) < 0.02 || !player.alive) gfx.style.opacity = 0;
+  else {
+    const k = Math.abs(gStress), c = gStress > 0 ? '0,0,0' : '150,0,0';
+    gfx.style.background = `radial-gradient(ellipse at center, rgba(${c},0) ${Math.round(60 - 45 * k)}%, rgba(${c},${(0.55 + 0.4 * k).toFixed(2)}) 100%)`;
+    gfx.style.opacity = Math.min(1, k * 1.3);
+  }
   // 来袭导弹：屏幕上标出方位
   let mk = 0;
   for (const m of missiles) {
@@ -1708,7 +1808,12 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyF' && running && !e.repeat) launchMissile(player);
   if (e.code === 'KeyX' && running && player.alive) dropFlares(player);
   if (e.code === 'KeyC' && !cam.free) { cam.free = true; freeYaw = aimYaw; freePitch = aimPitch; }
-  if (e.code === 'KeyV') cam.dist = cam.dist > 40 ? 20 : cam.dist > 25 ? 55 : 32;
+  if (e.code === 'KeyV') {   // 追尾中 → 追尾近 → 追尾远 → 座舱
+    if (cam.cockpit) { cam.cockpit = false; cam.dist = 32; }
+    else if (cam.dist > 40) cam.cockpit = true;
+    else cam.dist = cam.dist > 25 ? 20 : 55;
+    document.body.classList.toggle('cockpit', cam.cockpit);
+  }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'KeyC') cam.free = false; });
@@ -2061,10 +2166,10 @@ function stepWorld(dt) {
   flash.intensity *= Math.exp(-dt * 9);
 }
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rdt = Math.min(clock.getDelta(), 0.05), dt = rdt * (killcam.t > 0 ? 0.25 : 1);
   if (running && booted) stepWorld(dt);
   smokeFx.flush(); glowFx.flush();
-  updateCamera(dt);
+  updateCamera(killcam.t > 0 ? rdt : dt);
   water.position.x = camera.position.x; water.position.z = camera.position.z;
   cloudMat.uniforms.uCam.value.copy(camera.position);
   sky.position.copy(camera.position);   // 天空盒跟着镜头，飞多远都在盒子里
