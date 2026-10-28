@@ -1030,7 +1030,7 @@ function loadJet(id) {
       const b64 = window.JETDATA[id], bin = atob(b64), buf = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
       delete window.JETDATA[id];
-      gltfLoader.parse(buf.buffer, '', (g) => { if (JETS[id]) weatherJet(g, JETS[id].len); jetGLTF[id] = g; resolve(g); }, reject);
+      gltfLoader.parse(buf.buffer, '', (g) => { if (JETS[id]) weatherJet(g, JETS[id].len); jetGLTF[id] = g; if (JETS[id]) detectNozzles(id); resolve(g); }, reject);
     };
     if (window.JETDATA && window.JETDATA[id]) return parse();
     const sc = document.createElement('script');   // 用 script 标签读本地 js，双击 file:// 也能用
@@ -1064,6 +1064,73 @@ function setCanopyHidden(ac, hide) {
   if (!ac.mesh || ac._canopyHidden === hide) return;
   ac._canopyHidden = hide;
   ac.mesh.traverse((n) => { if (n.isMesh && /glass|canopy/i.test(n.material?.name || '') && !/inst|hud/i.test(n.material?.name || '')) n.visible = !hide; });
+}
+// 从模型网格里找真实喷口：取机尾一段薄切片里的顶点，按 (x,y) 连通成团，挑「圆、大小像喷口」的团，
+// 由后往前逐段加深切片，第一次找到 1 个或左右对称 2 个就用（机型数据里的 nx 只是估值，常和模型对不上）
+const _nozCache = {};
+// 自动找不准的机型给个大致范围（看正后方标定图量的，单位米，x 取右侧、自动镜像）：只在这个框里找最靠后的那圈顶点
+const NOZ_HINT = { 'F-22': { x: [0.1, 1.15], y: [-1.3, -0.55] }, 'FA-18F': { x: [0.12, 1.0], y: [-1.25, -0.25] }, 'Rafale': { x: [0.1, 0.75], y: [-1.05, -0.25], dy: -0.22, dx: 0.04 } };
+function detectNozzles(id) {
+  if (id in _nozCache) return _nozCache[id] && _nozCache[id].map((v) => v.clone());
+  const j = JETS[id]; if (!j || !jetGLTF[id]) return null;
+  const g = jetMesh(id); g.updateMatrixWorld(true);
+  const P = [], v = new THREE.Vector3();
+  g.traverse((n) => {
+    if (!n.isMesh || /glass|canopy|hud/i.test(n.material?.name || '')) return;
+    const pos = n.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(n.matrixWorld); P.push(v.x, v.y, v.z); }
+  });
+  let zMin = Infinity; for (let i = 2; i < P.length; i += 3) zMin = Math.min(zMin, P[i]);
+  const hint = NOZ_HINT[id];
+  if (hint) {
+    // 框内最靠后的顶点所在的那一薄层（喷口出口环），取它的包围盒中心
+    let zr = Infinity; const inBox = (i) => P[i] > hint.x[0] && P[i] < hint.x[1] && P[i + 1] > hint.y[0] && P[i + 1] < hint.y[1];
+    for (let i = 0; i < P.length; i += 3) if (inBox(i)) zr = Math.min(zr, P[i + 2]);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < P.length; i += 3) if (inBox(i) && P[i + 2] < zr + 0.35) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); }
+    const c = new THREE.Vector3((x0 + x1) / 2 + (hint.dx || 0), (y0 + y1) / 2 + (hint.dy || 0), zr);
+    _nozCache[id] = [c, c.clone().setX(-c.x)];
+    if (window.__NOZDBG) console.log('NOZ ' + id + ' hint ' + c.toArray().map((x) => x.toFixed(2)).join(','));
+    return _nozCache[id].map((v) => v.clone());
+  }
+  const L = j.len, dia = 0.055 * L, twin = j.nx > 0;
+  { const R = []; for (let i = 0; i < P.length; i += 3) if (P[i + 2] < zMin + 0.16 * L) R.push(P[i], P[i + 1], P[i + 2]); P.length = 0; for (const x of R) P.push(x); }   // 只留机尾一段，算得快
+  let found = null;
+  // 单发：取正中的那一团；双发：取左右对称、间距最接近机型数据 nx 的一对。网格由粗到细，喷口挨得近的（阵风）细网格才分得开
+  for (const C of [0.12, 0.08, 0.05]) for (let depth = 0.02; depth <= 0.16 && !found; depth += 0.01) {
+    const cells = new Map();
+    for (let i = 0; i < P.length; i += 3) if (P[i + 2] < zMin + depth * L) {
+      const k = (Math.round(P[i] / C) + 500) * 1000 + Math.round(P[i + 1] / C) + 500;
+      let c = cells.get(k); if (!c) cells.set(k, c = []); c.push(i);
+    }
+    const seen = new Set(), groups = [];
+    for (const k of cells.keys()) {
+      if (seen.has(k)) continue;
+      const st = [k], idx = []; seen.add(k);
+      while (st.length) { const q = st.pop(); for (const ii of cells.get(q)) idx.push(ii);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const nk = q + dx * 1000 + dy; if (cells.has(nk) && !seen.has(nk)) { seen.add(nk); st.push(nk); } } }
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity;
+      for (const i of idx) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); z0 = Math.min(z0, P[i + 2]); }
+      const w = x1 - x0, h = y1 - y0;
+      if (w > dia * 0.4 && w < dia * 3 && h > dia * 0.3 && h < dia * 3 && w / h > 0.3 && w / h < 3.6)   // 圆形或 F-22 那种扁方喷口
+        groups.push({ c: new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, z0), n: idx.length });
+    }
+    if (!twin) {
+      const g1 = groups.filter((g) => Math.abs(g.c.x) < 0.3).sort((a, b) => b.n - a.n)[0];
+      if (g1) found = [g1.c];
+    } else {
+      let best = null, bs = Infinity;
+      for (let a = 0; a < groups.length; a++) for (let b = a + 1; b < groups.length; b++) {
+        const A = groups[a].c, B = groups[b].c, hx = (Math.abs(A.x) + Math.abs(B.x)) / 2;
+        if (A.x * B.x >= 0 || Math.abs(A.x + B.x) > 0.2 || Math.abs(A.y - B.y) > 0.2 || hx < 0.25 || hx > j.nx * 1.8 + 0.3) continue;
+        const s = Math.abs(hx - j.nx); if (s < bs) { bs = s; best = [A, B]; }
+      }
+      found = best;
+    }
+  }
+  _nozCache[id] = found;
+  if (window.__NOZDBG) console.log('NOZ ' + id + ' ' + (found ? found.map((p) => p.toArray().map((x) => x.toFixed(2)).join(',')).join(' | ') : 'none') + '  guess z=' + (-0.47 * L).toFixed(2) + ' nx=' + j.nx);
+  return found && found.map((p) => p.clone());
 }
 function jetMesh(id) {
   const g = new THREE.Group(), m = jetGLTF[id].scene.clone(true);
@@ -1150,7 +1217,7 @@ class Aircraft {
     this.type = type; const j = JETS[type];
     this.jet = j; this.hit = j.hit;
     this.fm = { mass: j.mass, S: j.S, Tmax: j.T, CLa: 3.6, aStall: j.aStall, CD0: 0.022, K: 0.11, maxG: j.g, roll: j.roll };
-    this.nozzles = (j.nx ? [j.nx, -j.nx] : [0]).map((x) => new THREE.Vector3(x, 0, -j.len * 0.47));
+    this.nozzles = detectNozzles(type) || (j.nx ? [j.nx, -j.nx] : [0]).map((x) => new THREE.Vector3(x, 0, -j.len * 0.47));
     this.gun = new THREE.Vector3(-0.5, 0.35, j.len * 0.3);
     this.mesh = jetMesh(type); this.prop = null; this.parts = {}; scene.add(this.mesh);
     this.onDeck = false; this.landed = false; this.arrested = false; this.catT = undefined; this.catReady = false;

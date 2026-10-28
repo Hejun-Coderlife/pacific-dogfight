@@ -301,6 +301,31 @@
     const c = V3().set(ISL.x - 3000, 1400, ISL.z - 3000).addScaledVector(dir, 230 * 0.2);
     look(c.clone().addScaledVector(side, 160).addScaledVector(dir, -90).add(V3().set(0, 25, 0)), c.clone().addScaledVector(dir, 40));
   });
+  // 喷口标定（不进成片）：每款战机正后方 + 正侧面各一张，叠 0.25 m 网格，红点是现在尾焰的位置
+  if (window.__NOZCAL) {
+    S.length = 0;
+    const ids = JET_IDS.filter((id) => !JETS[id].noAB);
+    for (const id of ids) loadJet(id);   // 先把所有机型加载好，免得切到还没加载的机型时报错
+    let grid = null;
+    for (const id of ids) for (const view of ['rear', 'side']) shot(0.5, () => {
+      clearAll(); applyWeather('clear'); A = mk(id, true); fov(14); camera.near = 1; camera.updateProjectionMatrix();
+      A.st.pos.set(0, 3000, 0); A.st.q.identity(); A.st.thr = 1; A.mesh.position.copy(A.st.pos); A.mesh.quaternion.identity(); A.mesh.updateMatrixWorld(true);
+      if (grid) scene.remove(grid);
+      grid = new THREE.Group();
+      const L = JETS[id].len, z0 = -0.5 * L;
+      const gh = new THREE.GridHelper(8, 32, 0xff0000, 0x00ffff); gh.material.depthTest = false; gh.renderOrder = 10;
+      if (view === 'rear') { gh.rotation.x = Math.PI / 2; gh.position.set(0, 3000, z0 - 2); }
+      else { gh.rotation.z = Math.PI / 2; gh.position.set(-6, 3000, z0 + 2); }
+      grid.add(gh);
+      for (const nz of A.nozzles) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2020, depthTest: false })); m.renderOrder = 11; m.position.copy(A.mesh.localToWorld(nz.clone())); grid.add(m); }
+      scene.add(grid);
+    }, () => {
+      A.st.pos.set(0, 3000, 0); A.mesh.position.copy(A.st.pos); A.mesh.quaternion.identity(); A.st.q.identity(); A.st.thr = 1;
+      const L = JETS[id].len;
+      if (view === 'rear') look(V3().set(0, 3000, -0.5 * L - 34), V3().set(0, 3000, 0));
+      else look(V3().set(-46, 3000, -0.5 * L + 2), V3().set(0, 3000, -0.5 * L + 2));
+    });
+  }
   // ---- 录制接口 ----
   let frame = 0, cur = -1, shotT = 0;
   const starts = []; { let acc = 0; for (const s of S) { starts.push(acc); acc += s.dur; } window.PROMO_LEN = acc; }
