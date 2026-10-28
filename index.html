@@ -189,8 +189,8 @@ water.material.uniforms.size.value = 0.45;
 water.rotation.x = -Math.PI / 2;
 scene.add(water);
 
-// ---------- 海岛 ----------
-const ISLANDS = [
+// ---------- 海岛（无限群岛：按 12 km 网格确定性生成，只给镜头附近的岛建网格） ----------
+const HOME_ISLANDS = [
   { x: 700,   z: 4700,  r: 1600, peak: 600, seed: 3 },
   { x: -4200, z: -1800, r: 900,  peak: 300, seed: 11 },
   { x: 5600,  z: -8200, r: 2300, peak: 820, seed: 23, crater: true },
@@ -199,6 +199,31 @@ const ISLANDS = [
   { x: -9000, z: -7000, r: 1800, peak: 600, seed: 41 },
   { x: 7800,  z: 2600,  r: 1100, peak: 380, seed: 53 },
 ];
+const CELL = 12000, BUILD_R = 24000, DROP_R = 30000;
+const cellCache = new Map();
+function cellIslands(cx, cz) {
+  const key = cx + ',' + cz;
+  let list = cellCache.get(key);
+  if (list) return list;
+  list = HOME_ISLANDS.filter((I) => Math.floor(I.x / CELL) === cx && Math.floor(I.z / CELL) === cz);
+  if (cx < -1 || cx > 0 || cz < -1 || cz > 0) {   // 起始海域用手摆的岛，其余随机
+    const rnd = mulberry32(Math.imul(cx, 73856093) ^ Math.imul(cz, 19349663) ^ 0x5bd1e995);
+    const n = rnd() < 0.4 ? 0 : 1 + Math.floor(rnd() * 2);
+    for (let k = 0; k < n; k++) {
+      const big = rnd() < 0.12;
+      const r = big ? 2800 + rnd() * 1700 : 500 + rnd() * 1900;
+      const I = { x: 0, z: 0, r, peak: big ? 900 + rnd() * 700 : r * (0.08 + rnd() * 0.4), seed: (Math.abs(cx * 131 + cz * 977) + k * 17) % 9973 + 1 };
+      I.crater = I.peak > 500 && rnd() < 0.25;
+      for (let tries = 0; tries < 6; tries++) {
+        I.x = (cx + 0.15 + rnd() * 0.7) * CELL; I.z = (cz + 0.15 + rnd() * 0.7) * CELL;
+        if (list.every((J) => Math.hypot(I.x - J.x, I.z - J.z) > (I.r + J.r) * 1.25)) break;
+      }
+      list.push(I);
+    }
+  }
+  cellCache.set(key, list);
+  return list;
+}
 function islandH(I, x, z) {
   const lx = (x - I.x) / I.r, lz = (z - I.z) / I.r;
   const wx = lx + 0.45 * (fbm(lx * 1.1 + I.seed, lz * 1.1, I.seed, 4) - 0.5);
@@ -225,9 +250,9 @@ const PAL = {
   grass: C(0x5c6b30), rock: C(0x5a524a), darkRock: C(0x332e2b),
   deep: C(0x0f6f7a), shallow: C(0x6fe0cf), foam: C(0xf4f7f5),
 };
-const vegData = [];
+const vegGeo = new THREE.IcosahedronGeometry(1, 0), vegMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true });
 function buildIsland(I) {
-  const size = I.r * 2.7, seg = Math.round(Math.min(240, 110 + I.r / 14));
+  const size = I.r * 2.7, seg = Math.round(Math.min(200, 70 + I.r / 20)), objs = [];
   const g = new THREE.PlaneGeometry(size, size, seg, seg); g.rotateX(-Math.PI / 2);
   const pos = g.attributes.position, n = pos.count, H = new Float32Array(n);
   for (let i = 0; i < n; i++) { const h = islandH(I, pos.getX(i) + I.x, pos.getZ(i) + I.z); H[i] = h; pos.setY(i, h); }
@@ -247,7 +272,7 @@ function buildIsland(I) {
   g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
   const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
   mesh.position.set(I.x, 0, I.z);
-  scene.add(mesh);
+  scene.add(mesh); objs.push(mesh);
 
   // 浅滩：沿真实海岸线的青绿色 + 白浪
   const g2 = new THREE.PlaneGeometry(size, size, seg, seg); g2.rotateX(-Math.PI / 2);
@@ -263,32 +288,55 @@ function buildIsland(I) {
   g2.setAttribute('color', new THREE.BufferAttribute(c4, 4));
   const shallow = new THREE.Mesh(g2, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false }));
   shallow.position.set(I.x, 0.6, I.z);
-  scene.add(shallow);
+  scene.add(shallow); objs.push(shallow);
 
   // 树冠
-  const rnd = mulberry32(I.seed * 99), tries = Math.round(I.r * I.r / 380);
+  const rnd = mulberry32(I.seed * 99), tries = Math.round(Math.min(I.r, 2600) ** 2 / 380), veg = [];
   for (let k = 0; k < tries; k++) {
     const x = I.x + (rnd() * 2 - 1) * I.r * 1.05, z = I.z + (rnd() * 2 - 1) * I.r * 1.05;
     const h = islandH(I, x, z);
     if (h < 6 || h > I.peak * 0.82) continue;
     const grad = Math.hypot(islandH(I, x + 4, z) - h, islandH(I, x, z + 4) - h) / 4;
     if (grad > 0.8 || fbm(x * 0.003, z * 0.003, I.seed + 70, 3) < 0.36) continue;
-    vegData.push([x, h, z, 6 + rnd() * 7, rnd()]);
+    veg.push([x, h, z, 6 + rnd() * 7, rnd()]);
   }
-}
-ISLANDS.forEach(buildIsland);
-{
-  const vm = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0),
-    new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true }), vegData.length);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
-  vegData.forEach(([x, h, z, sz, r], i) => {
+  const vm = new THREE.InstancedMesh(vegGeo, vegMat, Math.max(1, veg.length));
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  vm.count = veg.length;
+  veg.forEach(([x, h, z, sz, r], i) => {
     q.setFromEuler(new THREE.Euler(0, r * 6.28, 0));
     m.compose(p.set(x, h + sz * 0.35, z), q, s.set(sz, sz * 0.8, sz));
     vm.setMatrixAt(i, m);
     vm.setColorAt(i, c.copy(PAL.jungleA).lerp(PAL.jungleB, r).multiplyScalar(0.8 + r * 0.4));
   });
-  scene.add(vm);
+  scene.add(vm); objs.push(vm);
+  return objs;
 }
+// 镜头附近的岛排队建网格（每几帧建一个，避免卡顿），远了就回收
+const builtIslands = new Map(), buildQueue = [];
+let islandTick = 0;
+function updateIslands(cam, buildNow = false) {
+  const cx0 = Math.floor(cam.x / CELL), cz0 = Math.floor(cam.z / CELL), k = Math.ceil(BUILD_R / CELL) + 1;
+  for (let cx = cx0 - k; cx <= cx0 + k; cx++) for (let cz = cz0 - k; cz <= cz0 + k; cz++)
+    for (const I of cellIslands(cx, cz)) {
+      if (builtIslands.has(I) || buildQueue.includes(I)) continue;
+      if (Math.hypot(I.x - cam.x, I.z - cam.z) - I.r < BUILD_R) buildQueue.push(I);
+    }
+  for (const [I, objs] of builtIslands) {
+    if (Math.hypot(I.x - cam.x, I.z - cam.z) - I.r < DROP_R) continue;
+    for (const o of objs) { scene.remove(o); if (o.geometry !== vegGeo) o.geometry.dispose(); if (o.material !== vegMat) o.material.dispose(); }
+    builtIslands.delete(I);
+  }
+  buildQueue.sort((a, b) => Math.hypot(a.x - cam.x, a.z - cam.z) - Math.hypot(b.x - cam.x, b.z - cam.z));
+  while (buildQueue.length && (buildNow ? Math.hypot(buildQueue[0].x - cam.x, buildQueue[0].z - cam.z) < 14000 : false)) {
+    const I = buildQueue.shift(); builtIslands.set(I, buildIsland(I));
+  }
+}
+function tickIslands(cam) {
+  if (++islandTick % 30 === 0) updateIslands(cam);
+  if (islandTick % 4 === 0 && buildQueue.length) { const I = buildQueue.shift(); builtIslands.set(I, buildIsland(I)); }
+}
+updateIslands(new THREE.Vector3(2400, 0, 900), true);
 
 // ---------- 云（单次绘制的实例化公告板） ----------
 function cloudTexture(N = 256) {
@@ -308,10 +356,9 @@ function cloudTexture(N = 256) {
 const puffs = [];
 {
   const rnd = mulberry32(5);
-  for (let c = 0; c < 48; c++) {
-    const ang = rnd() * Math.PI * 2, dist = 2200 + rnd() * 17000;
-    const cx = Math.cos(ang) * dist, cz = Math.sin(ang) * dist;
-    const cy = 750 + rnd() * 600, cs = 260 + rnd() * 640, nP = 22 + Math.floor(rnd() * 22);
+  for (let c = 0; c < 110; c++) {
+    const cx = (rnd() * 2 - 1) * 20000, cz = (rnd() * 2 - 1) * 20000, high = rnd() < 0.3;
+    const cy = high ? 2600 + rnd() * 1800 : 750 + rnd() * 600, cs = (high ? 500 : 260) + rnd() * (high ? 900 : 640), nP = 22 + Math.floor(rnd() * 22);
     for (let p = 0; p < nP; p++) {
       const ox = (rnd() + rnd() - 1) * cs * 1.2, oz = (rnd() + rnd() - 1) * cs * 0.8, oy01 = Math.pow(rnd(), 1.3) * (1 - Math.abs(ox) / cs * 0.5);
       const oy = oy01 * cs * 0.7;
@@ -333,13 +380,15 @@ const cloudGeo = new THREE.InstancedBufferGeometry();
   cloudGeo.instanceCount = puffs.length;
 }
 const cloudMat = new THREE.ShaderMaterial({
-  uniforms: { map: { value: cloudTexture() }, fogColor: { value: new THREE.Color() }, fogDensity: { value: P.fogDensity } },
+  uniforms: { map: { value: cloudTexture() }, fogColor: { value: new THREE.Color() }, fogDensity: { value: P.fogDensity }, uCam: { value: new THREE.Vector3() } },
   vertexShader: `
-    attribute vec3 iOffset; attribute float iSize; attribute float iRot; attribute vec3 iColor;
+    attribute vec3 iOffset; attribute float iSize; attribute float iRot; attribute vec3 iColor; uniform vec3 uCam;
     varying vec2 vUv; varying vec3 vColor; varying float vDepth;
     void main() {
       vUv = uv; vColor = iColor;
-      vec4 mv = viewMatrix * vec4(iOffset, 1.0);
+      vec3 o = iOffset;
+      o.xz = uCam.xz + mod(o.xz - uCam.xz + 20000.0, 40000.0) - 20000.0;   // 云场随镜头循环平铺
+      vec4 mv = viewMatrix * vec4(o, 1.0);
       float c = cos(iRot), s = sin(iRot);
       mv.xy += vec2(c * position.x - s * position.y, s * position.x + c * position.y) * iSize;
       vDepth = -mv.z;
@@ -557,7 +606,9 @@ composer.addPass(new OutputPass());
 // ---------- 地面高度（坠毁判定） ----------
 function groundH(x, z) {
   let h = 0;
-  for (const I of ISLANDS) if (Math.abs(x - I.x) < I.r * 1.35 && Math.abs(z - I.z) < I.r * 1.35) h = Math.max(h, islandH(I, x, z));
+  const cx0 = Math.floor(x / CELL), cz0 = Math.floor(z / CELL);
+  for (let cx = cx0 - 1; cx <= cx0 + 1; cx++) for (let cz = cz0 - 1; cz <= cz0 + 1; cz++)
+    for (const I of cellIslands(cx, cz)) if (Math.abs(x - I.x) < I.r * 1.35 && Math.abs(z - I.z) < I.r * 1.35) h = Math.max(h, islandH(I, x, z));
   return h;
 }
 
@@ -1543,6 +1594,9 @@ renderer.setAnimationLoop(() => {
   smokeFx.flush(); glowFx.flush();
   updateCamera(dt);
   water.position.x = camera.position.x; water.position.z = camera.position.z;
+  cloudMat.uniforms.uCam.value.copy(camera.position);
+  sky.position.copy(camera.position);   // 天空盒跟着镜头，飞多远都在盒子里
+  tickIslands(camera.position);
   water.material.uniforms.time.value += dt * 0.8;
   composer.render();
   if (booted) { updateHUD(dt); updateAudio(); }
