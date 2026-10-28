@@ -1424,6 +1424,7 @@ function updateHUD(dt) {
   hud.alt.textContent = Math.round(st.pos.y);
   hud.thr.textContent = Math.round(st.thr * 100);
   hud.gl.textContent = st.g.toFixed(1);
+  hud.gl.style.color = st.g > 8 ? '#ff6a5a' : st.g > 6 ? '#ffd27a' : '';   // 高 G 只变色提示，不弹警告
   hud.msl.textContent = player.slots ? player.slots.filter((s) => s.ready).length : 0;
   hud.kn.textContent = kills;
   if ((msgT -= dt) <= 0) hud.msg.style.opacity = 0;
@@ -1466,7 +1467,6 @@ function updateHUD(dt) {
   const agl = st.pos.y - groundH(st.pos.x, st.pos.z);
   if (st.stalled) showWarn('失速');
   else if (agl < 120 && st.vel.y < -15) showWarn('拉起！');
-  else if (st.g > 7) showWarn('过载');
   else showWarn('');
 }
 
