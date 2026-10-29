@@ -104,6 +104,7 @@
 </style>
 <script src="assets/models/CVN-78-deck.js"></script>
 <script src="assets/sfx.js"></script>
+<script src="assets/music.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
@@ -152,7 +153,7 @@
   <p><button id="again">再来一次</button><button id="tohangar">返回机库</button></p>
 </div></div>
 <div id="gfx"></div>
-<div id="credit">机模：bohmerang（10 款战机 + B-2 + 导弹，CC BY-NC-SA）、outpiston（F-117，CC BY-NC-SA）、waelXcm（福特号航母，CC BY）· Sketchfab · 音效 freesound / Kenney CC0</div>
+<div id="credit">机模：bohmerang（10 款战机 + B-2 + 导弹，CC BY-NC-SA）、outpiston（F-117，CC BY-NC-SA）、waelXcm（福特号航母，CC BY）· Sketchfab · 音效 freesound / Kenney CC0 · 菜单音乐 Cleyton Kauffman（CC0）</div>
 <div id="ui">
   太阳高度 <input id="sun" type="range" min="1" max="40" step="0.5" value="5"> <span id="sunv">5°</span>
 </div>
@@ -3069,6 +3070,39 @@ thumbScene.environment = new THREE.PMREMGenerator(thumbR).fromScene(new RoomEnvi
 thumbScene.environmentIntensity = 0.55;
 thumbScene.add(heroKey.clone(), heroRim.clone(), new THREE.HemisphereLight(0x8899aa, 0x0a0c10, 0.5));
 const thumbCam = new THREE.PerspectiveCamera(24, 16 / 9, 0.5, 600);
+// ---------- 开始界面音乐 ----------
+// 单独一个 AudioContext：游戏音频在菜单里会被暂停（ac.suspend），菜单音乐不能跟着停。浏览器要等用户先点一下才允许出声
+const MENU_LOOP = 34.909;   // 原曲无缝循环长度（秒）；mp3 解码后可能多出一点尾巴，按原长循环
+let menuAc = null, menuGain = null, menuBufs = {}, menuOn = null;
+function initMenuAudio() {
+  if (menuAc || !window.MUSICDATA) return;
+  menuAc = new AudioContext(); menuGain = menuAc.createGain(); menuGain.gain.value = 0; menuGain.connect(menuAc.destination);
+  for (const [k, b64] of Object.entries(window.MUSICDATA)) {
+    const bin = atob(b64), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    menuAc.decodeAudioData(u8.buffer).then((buf) => {
+      menuBufs[k] = buf;
+      if (k !== 'menu') return;
+      const src = menuAc.createBufferSource(); src.buffer = buf; src.loop = true; src.loopEnd = Math.min(MENU_LOOP, buf.duration);
+      src.connect(menuGain); src.start(); menuOn = null;
+    });
+  }
+}
+addEventListener('pointerdown', initMenuAudio, true); addEventListener('keydown', initMenuAudio, true);
+function updateMenuMusic() {
+  if (!menuAc) return;
+  const on = startEl.style.display !== 'none';
+  if (on === menuOn) return;
+  menuOn = on;
+  menuGain.gain.cancelScheduledValues(menuAc.currentTime);
+  menuGain.gain.setTargetAtTime(on ? 0.6 : 0, menuAc.currentTime, on ? 0.9 : 0.35);   // 回菜单慢慢淡入，起飞时较快淡出
+}
+function playSwitchSound() {
+  if (!menuAc || !menuBufs.switch) return;
+  const src = menuAc.createBufferSource(), g = menuAc.createGain(); g.gain.value = 0.55;
+  src.buffer = menuBufs.switch; src.connect(g); g.connect(menuAc.destination); src.start();
+}
+
 function onJetReady(id) {
   if (id === playerType) setHero(id);
   const btn = [...hangarEl.children].find((b) => b.dataset.id === id);
@@ -3090,6 +3124,7 @@ for (const id of JET_IDS) {
   b.innerHTML = `<i></i><span>${JETS[id].cn}</span>`;   // 缩略图等模型加载好，用影棚光现渲（onJetReady）
   b.addEventListener('click', () => {
     if (id === playerType) return;
+    playSwitchSound();
     b.classList.add('loading');
     loadJet(id).then(() => {
       b.classList.remove('loading'); playerType = id; markHangar();
@@ -3182,7 +3217,7 @@ renderer.setAnimationLoop(() => {
   tickIslands(camera.position);
   if (player.mesh) aimShadow(player.st.pos);
   if (booted) { updateWeather(rdt); updateAutoWeather(rdt); }
-  heroFrame(rdt);
+  heroFrame(rdt); updateMenuMusic();
   water.material.uniforms.time.value += dt * 0.8;
   updateGodRays();
   composer.render();
