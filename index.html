@@ -24,21 +24,45 @@
   #bt { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); font-size: 13px; opacity: .9; }
   #warn { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); font-size: 28px; color: #ff6a5a;
           letter-spacing: .2em; opacity: 0; transition: opacity .2s; }
-  #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4,8,14,.35); cursor: pointer; }
-  #start .card { text-align: center; color: #eef2f6; background: rgba(10,14,20,.55); backdrop-filter: blur(10px);
-                 padding: 28px 38px; border-radius: 14px; font-size: 13px; line-height: 2; }
-  #start h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .3em; font-weight: 600; }
-  #start .go { font-size: 16px; color: #ffd27a; margin: 4px 0 10px; }
+  /* ---- 开始界面：电影感——左侧渐暗排版，右侧选中战机的 3D 转台 ---- */
+  #start { position: fixed; inset: 0; display: flex; cursor: pointer; color: #e9e6df; z-index: 3; }
+  #start .shade { position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(3,6,10,.94) 0%, rgba(3,6,10,.82) 30%, rgba(3,6,10,.25) 58%, rgba(3,6,10,0) 75%),
+                linear-gradient(0deg, rgba(3,6,10,.7), rgba(3,6,10,0) 28%); }
+  #hero { position: absolute; right: 0; top: 0; width: 62vw; height: 100vh; pointer-events: none; }
+  #start .menu { position: relative; margin: auto 0 auto 6.5vw; width: 560px; max-height: 94vh; overflow-y: auto; scrollbar-width: none; }
+  #start .over { font: 500 11px/1 "SF Mono", Menlo, monospace; letter-spacing: .55em; color: #c8a96a; }
+  #start h1 { margin: 18px 0 0; font-size: 54px; font-weight: 300; letter-spacing: .22em; color: #f5f2ea; }
+  #start .rule { width: 56px; height: 1px; background: #c8a96a; margin: 26px 0 26px; }
+  #start .jet b { display: block; font-size: 24px; font-weight: 500; letter-spacing: .06em; }
+  #start .jet span { display: block; margin-top: 8px; font: 12px/1 "SF Mono", Menlo, monospace; color: #8d96a0; letter-spacing: .06em; }
+  #start .go { margin-top: 34px; display: flex; align-items: center; gap: 22px; }
+  #start .go button { padding: 13px 40px; border: 1px solid #c8a96a; background: rgba(200,169,106,.08); color: #e8d3a6; cursor: pointer;
+    font: 500 14px -apple-system, "PingFang SC", sans-serif; letter-spacing: .5em; transition: background .25s; }
+  #start .go button:hover { background: rgba(200,169,106,.22); }
+  #start .go small { color: #6d7680; font-size: 12px; letter-spacing: .1em; }
+  #start .keys { position: absolute; left: 6.5vw; bottom: 26px; right: 30vw; font-size: 11px; line-height: 2.1; color: #6d7680; pointer-events: none; }
+  #start kbd { font: 10px "SF Mono", Menlo, monospace; color: #aab2bb; border: 1px solid #2c333b; border-radius: 3px; padding: 1px 5px; margin: 0 2px; }
+  body.menu #hud, body.menu #ui { display: none; }
+  /* 天气自动变换：飞机像穿过一片云——雾气涌上来遮住画面，换完天气再散开 */
+  #wxfade { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 2;
+    background: radial-gradient(ellipse at 50% 55%, var(--c1, #dfe5ea) 0%, var(--c2, #c6ced6) 70%, var(--c3, #aeb8c2) 100%); }
+  #wxtoast { position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); pointer-events: none; opacity: 0; z-index: 2;
+    color: #f2efe8; font: 13px -apple-system, "PingFang SC", sans-serif; letter-spacing: .3em; text-shadow: 0 1px 8px rgba(0,0,0,.6); transition: opacity .6s; }
   #ui { z-index: 5; }
-  #hangar { display: grid; grid-template-columns: repeat(4, 150px); gap: 8px; margin: 14px 0 6px; }
-  #hangar button { padding: 0; border: 2px solid transparent; border-radius: 8px; background: #0c1118; color: #dfe6ee; cursor: pointer; overflow: hidden; font: 12px/1.9 -apple-system, "PingFang SC", sans-serif; }
-  #hangar button img { display: block; width: 100%; height: 84px; object-fit: cover; }
-  #hangar button.sel { border-color: #ffd27a; color: #ffd27a; }
+  #hangar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 22px 0 26px; }
+  #hangar button { padding: 0 0 7px; border: 1px solid rgba(255,255,255,.07); border-radius: 4px; background: rgba(255,255,255,.025); color: #8d96a0;
+    cursor: pointer; overflow: hidden; font: 11px/1.4 -apple-system, "PingFang SC", sans-serif; letter-spacing: .04em; transition: border-color .2s, color .2s, background .2s; }
+  #hangar button i { display: block; aspect-ratio: 16 / 9; background: center / cover no-repeat; margin-bottom: 6px; }
+  #hangar button:hover { border-color: rgba(255,255,255,.2); color: #d5dbe1; }
+  #hangar button.sel { border-color: #c8a96a; color: #e8d3a6; background: rgba(200,169,106,.07); }
   #hangar button.loading { opacity: .5; }
-  #start .card { max-width: 680px; max-height: 92vh; overflow-y: auto; }   /* 窗口矮时卡片可滚动，不顶出屏幕 */
-  .opts { margin: 4px 0 2px; font-size: 13px; }
-  .opts button { margin: 0 3px; padding: 3px 12px; border-radius: 6px; border: 1px solid #556; background: #0c1118; color: #cfd6de; cursor: pointer; font: inherit; }
-  .opts button.sel { border-color: #ffd27a; color: #ffd27a; }
+  .opts { display: flex; align-items: baseline; margin: 0 0 12px; font-size: 13px; }
+  .opts label { width: 64px; flex: none; font-size: 11px; letter-spacing: .4em; color: #5e6770; }
+  .opts span { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+  .opts button { padding: 3px 0; border: 0; border-bottom: 1px solid transparent; background: none; color: #858e98; cursor: pointer; font: inherit; letter-spacing: .06em; transition: color .2s; }
+  .opts button:hover { color: #d5dbe1; }
+  .opts button.sel { color: #f5f2ea; border-bottom-color: #c8a96a; }
   #kills small { font-size: 12px; font-weight: 400; opacity: .85; }
   #dmg { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(255,30,20,.55)); opacity: 0; transition: opacity .25s; }
   .mslmk { position: absolute; left: 0; top: 0; color: #ff4d3d; font-size: 11px; }
@@ -87,7 +111,7 @@
 } }
 </script>
 </head>
-<body>
+<body class="menu">
 <div id="loading">LOADING · 加载机型</div>
 <div id="hud">
   <div id="aim"></div><div id="nose"></div>
@@ -102,17 +126,26 @@
   <div id="warn"></div>
 </div>
 <div id="start">
-  <div class="card">
+  <div class="shade"></div>
+  <canvas id="hero"></canvas>
+  <div class="menu">
+    <div class="over">PACIFIC DOGFIGHT</div>
     <h1>太平洋空战</h1>
+    <div class="rule"></div>
+    <div class="jet"><b id="jname">F-22 猛禽</b><span id="jspec"></span></div>
     <div id="hangar"></div>
-    <div class="opts">任务 <span id="mis"><button data-v="free" class="sel">自由空战</button><button data-v="timed">限时歼灭</button><button data-v="escort">护航轰炸机</button><button data-v="defend">保卫航母</button></span></div>
-    <div class="opts">起飞 <span id="spm"><button data-v="air" class="sel">空中出发</button><button data-v="deck">航母弹射</button></span></div>
-    <div class="opts">天气 <span id="wx"><button data-v="clear" class="sel">晴天</button><button data-v="dusk">黄昏</button><button data-v="noon">正午</button><button data-v="overcast">阴天</button><button data-v="storm">暴风雨</button><button data-v="bluehour">蓝调时刻</button><button data-v="night">夜晚</button><button data-v="starry">银河夜</button></span></div>
-    <div class="opts">难度 <span id="diff"><button data-v="rookie">新兵</button><button data-v="vet" class="sel">老手</button><button data-v="ace">王牌</button></span></div>
-    <p class="go">选好机型，点击空白处开始</p>
-    <p>鼠标 指方向，飞机自动追准星<br>左键 / 空格 机炮 · 右键 / F 导弹 · X 热诱弹 · G 起落架 · T 弹射 · M 雷达量程 · W / S 油门（推满开加力）· A / D 横滚 · Q / E 方向舵 · ↑ / ↓ 俯仰<br>V 座舱视角（看仪表盘）· 滚轮 追尾远近 · 按住 C 自由看 · R 重新起飞 · Esc 暂停</p>
+    <div class="opts"><label>任务</label><span id="mis"><button data-v="free" class="sel">自由空战</button><button data-v="timed">限时歼灭</button><button data-v="escort">护航轰炸机</button><button data-v="defend">保卫航母</button></span></div>
+    <div class="opts"><label>起飞</label><span id="spm"><button data-v="air" class="sel">空中出发</button><button data-v="deck">航母弹射</button></span></div>
+    <div class="opts"><label>天气</label><span id="wx"><button data-v="auto" class="sel">自动变换</button><button data-v="clear">晴天</button><button data-v="dusk">黄昏</button><button data-v="noon">正午</button><button data-v="overcast">阴天</button><button data-v="storm">暴风雨</button><button data-v="bluehour">蓝调时刻</button><button data-v="night">夜晚</button><button data-v="starry">银河夜</button></span></div>
+    <div class="opts"><label>难度</label><span id="diff"><button data-v="rookie">新兵</button><button data-v="vet" class="sel">老手</button><button data-v="ace">王牌</button></span></div>
+    <div class="go"><button>起 飞</button><small>或点击空白处</small></div>
+  </div>
+  <div class="keys">
+    <kbd>鼠标</kbd>指方向 · <kbd>左键</kbd><kbd>空格</kbd>机炮 · <kbd>右键</kbd><kbd>F</kbd>导弹 · <kbd>X</kbd>热诱弹 · <kbd>W</kbd><kbd>S</kbd>油门 · <kbd>A</kbd><kbd>D</kbd>横滚 · <kbd>Q</kbd><kbd>E</kbd>方向舵 · <kbd>↑</kbd><kbd>↓</kbd>俯仰<br>
+    <kbd>G</kbd>起落架 · <kbd>T</kbd>弹射 · <kbd>M</kbd>雷达量程 · <kbd>V</kbd>座舱 · <kbd>C</kbd>自由看 · <kbd>滚轮</kbd>追尾远近 · <kbd>R</kbd>重新起飞 · <kbd>Esc</kbd>暂停
   </div>
 </div>
+<div id="wxfade"></div><div id="wxtoast"></div>
 <div id="result"><div class="card">
   <h1 id="rtitle">任务成功</h1><div id="rstars"></div>
   <table id="rstats"></table>
@@ -133,6 +166,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // ---------- 参数 ----------
 const P = {
@@ -1030,7 +1064,7 @@ function loadJet(id) {
       const b64 = window.JETDATA[id], bin = atob(b64), buf = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
       delete window.JETDATA[id];
-      gltfLoader.parse(buf.buffer, '', (g) => { if (JETS[id]) weatherJet(g, JETS[id].len); jetGLTF[id] = g; if (JETS[id]) detectNozzles(id); resolve(g); }, reject);
+      gltfLoader.parse(buf.buffer, '', (g) => { if (JETS[id]) weatherJet(g, JETS[id].len); jetGLTF[id] = g; if (JETS[id]) { detectNozzles(id); setTimeout(() => onJetReady(id)); } resolve(g); }, reject);
     };
     if (window.JETDATA && window.JETDATA[id]) return parse();
     const sc = document.createElement('script');   // 用 script 标签读本地 js，双击 file:// 也能用
@@ -2106,20 +2140,25 @@ function updateHUD(dt) {
 const startEl = $('start');
 const params = new URLSearchParams(location.search);
 let running = params.has('autostart'), mouseDown = false;
-if (running) startEl.style.display = 'none';
+if (running) { startEl.style.display = 'none'; document.body.classList.remove('menu'); }
 startEl.addEventListener('click', (e) => {
   if (e.target.closest('#hangar') || e.target.closest('.opts') || !booted) return;
   if (missionDirty || M.result) startMission();
   renderer.domElement.requestPointerLock(); initAudio();
 });
-for (const b of $('wx').children) b.addEventListener('click', () => { applyWeather(b.dataset.v); for (const x of $('wx').children) x.classList.toggle('sel', x === b); });
+for (const b of $('wx').children) b.addEventListener('click', () => {
+  autoWx = b.dataset.v === 'auto'; wxTimer = WX_HOLD;
+  if (!autoWx) applyWeather(b.dataset.v);
+  for (const x of $('wx').children) x.classList.toggle('sel', x === b);
+});
 for (const [id, set] of [['mis', (v) => { missionId = v; }], ['spm', (v) => { spawnMode = v; }]])
   for (const b of $(id).children) b.addEventListener('click', () => { set(b.dataset.v); missionDirty = true; for (const x of $(id).children) x.classList.toggle('sel', x === b); });
 $('again').addEventListener('click', () => { $('result').style.display = 'none'; startMission(); renderer.domElement.requestPointerLock(); initAudio(); });
-$('tohangar').addEventListener('click', () => { $('result').style.display = 'none'; missionDirty = true; startEl.style.display = 'flex'; });
+$('tohangar').addEventListener('click', () => { $('result').style.display = 'none'; missionDirty = true; startEl.style.display = 'flex'; document.body.classList.add('menu'); });
 document.addEventListener('pointerlockchange', () => {
   running = document.pointerLockElement === renderer.domElement;
   startEl.style.display = running || M.result ? 'none' : 'flex';
+  document.body.classList.toggle('menu', startEl.style.display !== 'none');
   if (!running) { mouseDown = false; if (audio) audio.ac.suspend(); }
 });
 addEventListener('mousedown', (e) => { if (running && e.button === 0) mouseDown = true; if (running && e.button === 2) launchMissile(player); });
@@ -2948,6 +2987,99 @@ function updateWeather(dt) {
 }
 const _w1 = V3();
 
+// ---------- 天气自动变换 ----------
+// 飞行中每隔一段时间按一天里自然的顺序换天气；换的时候像穿过一片云：雾涌上来盖住画面 → 在云里换天气 → 雾散开
+const WX_SEQ = ['clear', 'noon', 'overcast', 'storm', 'clear', 'dusk', 'bluehour', 'night', 'starry', 'dusk'];
+const WX_HOLD = 75;   // 每种天气停留秒数
+let autoWx = true, wxTimer = WX_HOLD, wxIdx = 0, wxFadeT = -1, wxNext = null, wxToastT = 0;
+const isDark = (id) => !!(WEATHER[id].night || WEATHER[id].blue || WEATHER[id].storm);
+function updateAutoWeather(dt) {
+  const fade = $('wxfade');
+  if (wxFadeT >= 0) {
+    // 0~1.4 秒雾涌上来，1.4 秒时换天气，之后 2.2 秒散开
+    wxFadeT += dt;
+    if (wxNext && wxFadeT >= 1.4) {
+      applyWeather(wxNext);
+      $('wxtoast').textContent = '天气转为 · ' + WEATHER[wxNext].cn; $('wxtoast').style.opacity = 1; wxToastT = 3.5;
+      wxNext = null;
+    }
+    const k = wxFadeT < 1.4 ? smoothstep(0, 1.4, wxFadeT) : 1 - smoothstep(1.5, 3.7, wxFadeT);
+    fade.style.opacity = k;
+    if (wxFadeT > 3.7) { wxFadeT = -1; fade.style.opacity = 0; }
+  }
+  if (wxToastT > 0 && (wxToastT -= dt) <= 0) $('wxtoast').style.opacity = 0;
+  if (!autoWx || !running || wxFadeT >= 0) return;
+  if ((wxTimer -= dt) > 0) return;
+  wxTimer = WX_HOLD;
+  wxIdx = (WX_SEQ.indexOf(weather) + 1) % WX_SEQ.length || (wxIdx + 1) % WX_SEQ.length;
+  wxNext = WX_SEQ[wxIdx];
+  // 雾的颜色：明亮天气之间是灰白的云，涉及夜晚 / 暴风雨就是暗灰的云
+  const dark = isDark(weather) || isDark(wxNext);
+  fade.style.setProperty('--c1', dark ? '#3a4048' : '#e4e9ee'); fade.style.setProperty('--c2', dark ? '#262b31' : '#cbd3da'); fade.style.setProperty('--c3', dark ? '#14181d' : '#aab4be');
+  wxFadeT = 0;
+}
+
+// ---------- 开始界面：选中战机的 3D 转台 + 影棚光缩略图 ----------
+const heroCv = $('hero');
+const heroR = new THREE.WebGLRenderer({ canvas: heroCv, alpha: true, antialias: true });
+heroR.setPixelRatio(Math.min(devicePixelRatio, 2));
+heroR.toneMapping = THREE.ACESFilmicToneMapping; heroR.toneMappingExposure = 0.78;
+const heroScene = new THREE.Scene();
+heroScene.environment = new THREE.PMREMGenerator(heroR).fromScene(new RoomEnvironment(), 0.04).texture;
+heroScene.environmentIntensity = 0.35;
+const heroKey = new THREE.DirectionalLight(0xfff1dc, 2.4); heroKey.position.set(-6, 9, 6);
+const heroRim = new THREE.DirectionalLight(0x9fc4ff, 2.0); heroRim.position.set(8, 3, -9);
+heroScene.add(heroKey, heroRim, new THREE.HemisphereLight(0x8899aa, 0x0a0c10, 0.5));
+const heroCam = new THREE.PerspectiveCamera(24, 1, 0.5, 600);
+let heroJet = null, heroLen = 18, heroT = 0, heroHidPlayer = null;
+function fitJet(id) {
+  const m = jetGLTF[id].scene.clone(true);
+  m.traverse((n) => { if (n.name && n.name.startsWith('GEAR_')) n.visible = false; });   // 展示时收起落架
+  const box = new THREE.Box3().setFromObject(m, true), c = box.getCenter(V3());
+  m.position.sub(c);   // 模型中心放到原点，转起来不偏
+  const g = new THREE.Group(); g.add(m);
+  return { g, len: box.getSize(V3()).length() };
+}
+function setHero(id) {
+  if (!jetGLTF[id]) return;
+  if (heroJet) heroScene.remove(heroJet);
+  const f = fitJet(id); heroJet = f.g; heroLen = f.len; heroScene.add(heroJet);
+}
+function heroFrame(dt) {
+  const menu = startEl.style.display !== 'none';
+  // 菜单里只看转台那架：后面场景里的玩家机先藏起来，免得两架重复；只在开关菜单那一刻切换，不碰坠毁时的隐藏
+  if (menu && heroJet && player.mesh?.visible) { player.mesh.visible = false; heroHidPlayer = player.mesh; }
+  if (!menu && heroHidPlayer) { if (heroHidPlayer === player.mesh) heroHidPlayer.visible = true; heroHidPlayer = null; }
+  if (!menu || !heroJet) return;
+  const w = heroCv.clientWidth, h = heroCv.clientHeight;
+  if (heroCv.width !== Math.round(w * heroR.getPixelRatio())) { heroR.setSize(w, h, false); heroCam.aspect = w / h; heroCam.updateProjectionMatrix(); }
+  heroT += dt;
+  heroJet.rotation.set(0.04 * Math.sin(heroT * 0.7), heroT * 0.22 + 2.3, 0.05 * Math.sin(heroT * 0.5));
+  heroJet.position.y = 0.012 * heroLen * Math.sin(heroT * 0.9);
+  const d = heroLen * 2.3;
+  heroCam.position.set(d * 0.78, d * 0.3, d * 0.62); heroCam.lookAt(0, -heroLen * 0.03, 0);
+  heroR.render(heroScene, heroCam);
+}
+// 缩略图：同一套影棚光，固定 3/4 侧前方，深色底，画进一个小画布再转成图片
+const thumbCv = document.createElement('canvas'); thumbCv.width = 320; thumbCv.height = 180;
+const thumbR = new THREE.WebGLRenderer({ canvas: thumbCv, alpha: true, antialias: true, preserveDrawingBuffer: true });
+thumbR.toneMapping = THREE.ACESFilmicToneMapping;
+const thumbScene = new THREE.Scene();
+thumbScene.environment = new THREE.PMREMGenerator(thumbR).fromScene(new RoomEnvironment(), 0.04).texture;
+thumbScene.environmentIntensity = 0.55;
+thumbScene.add(heroKey.clone(), heroRim.clone(), new THREE.HemisphereLight(0x8899aa, 0x0a0c10, 0.5));
+const thumbCam = new THREE.PerspectiveCamera(24, 16 / 9, 0.5, 600);
+function onJetReady(id) {
+  if (id === playerType) setHero(id);
+  const btn = [...hangarEl.children].find((b) => b.dataset.id === id);
+  if (!btn) return;
+  const f = fitJet(id); f.g.rotation.y = 2.5; thumbScene.add(f.g);
+  const d = f.len * 1.05; thumbCam.position.set(d * 0.8, d * 0.38, d * 0.6); thumbCam.lookAt(0, 0, 0);
+  thumbR.setClearColor(0x0b0f14, 1); thumbR.render(thumbScene, thumbCam);
+  btn.querySelector('i').style.backgroundImage = `url(${thumbCv.toDataURL('image/jpeg', 0.9)})`;
+  thumbScene.remove(f.g);
+}
+
 player = new Aircraft(true);
 aircraft.push(player);
 let booted = false;
@@ -2955,7 +3087,7 @@ let booted = false;
 const hangarEl = $('hangar');
 for (const id of JET_IDS) {
   const b = document.createElement('button'); b.dataset.id = id;
-  b.innerHTML = `<img src="assets/thumbs/${id}.jpg" alt=""><span>${JETS[id].cn}</span>`;
+  b.innerHTML = `<i></i><span>${JETS[id].cn}</span>`;   // 缩略图等模型加载好，用影棚光现渲（onJetReady）
   b.addEventListener('click', () => {
     if (id === playerType) return;
     b.classList.add('loading');
@@ -2971,7 +3103,13 @@ for (const b of $('diff').children) b.addEventListener('click', () => {
   for (const x of $('diff').children) x.classList.toggle('sel', x === b);
   for (const ac of aircraft) if (ac !== player) ac.fm.maxG = ac.jet.g * DIFF[difficulty].gLim;
 });
-function markHangar() { for (const b of hangarEl.children) b.classList.toggle('sel', b.dataset.id === playerType); }
+function markHangar() {
+  for (const b of hangarEl.children) b.classList.toggle('sel', b.dataset.id === playerType);
+  const j = JETS[playerType];
+  $('jname').textContent = j.cn;
+  $('jspec').textContent = `极速 ${j.vAlt} km/h · 过载 ${j.g} G · 机长 ${j.len} m · 翼展 ${j.span} m`;
+  setHero(playerType);
+}
 markHangar();
 async function boot() {
   // 先加载玩家机和 3 种敌机，其余机型在后台慢慢加载
@@ -3043,7 +3181,8 @@ renderer.setAnimationLoop(() => {
   sky.position.copy(camera.position);   // 天空盒跟着镜头，飞多远都在盒子里
   tickIslands(camera.position);
   if (player.mesh) aimShadow(player.st.pos);
-  if (booted) updateWeather(rdt);
+  if (booted) { updateWeather(rdt); updateAutoWeather(rdt); }
+  heroFrame(rdt);
   water.material.uniforms.time.value += dt * 0.8;
   updateGodRays();
   composer.render();
